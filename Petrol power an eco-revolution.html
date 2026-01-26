@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>P3 – Petrol power: an eco-revolution?</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root { 
+    --line: #e5e7eb; --bg: #f6f7fb; --panel: #fff; --accent: #3b82f6; 
+    --muted: #6b7280; --shadow: 0 6px 20px rgba(0,0,0,.12); 
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { 
+    margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
+    background: var(--bg); padding-bottom: 70px; color: #111827;
+  }
+  .shell { display: flex; height: 100vh; width: 100%; }
+  .pane { background: var(--panel); overflow: auto; padding: 20px; }
+  #left { flex: 0 0 50%; min-width: 280px; }
+  #right { flex: 1 1 auto; min-width: 320px; background: #fbfbff; border-left: 1px solid var(--line); }
+  #divider { flex: 0 0 8px; background: linear-gradient(90deg, #e5e7eb, #d1d5db); cursor: ew-resize; position: relative; z-index: 5; user-select: none; }
+  h2, h3, h4 { margin: 0 0 10px; }
+  #left p, #right p, #right li { margin: 0 0 12px; line-height: 1.6; }
+  .group { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+  .q-block { margin-bottom: 16px; }
+  .options { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .options label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .dropzone { 
+    border: 2px dashed #cbd5e1; background: #f8fafc; border-radius: 10px; 
+    min-height: 42px; padding: 6px; display: inline-flex; align-items: center; justify-content: center; 
+    width: 42px; vertical-align: middle;
+    transition: background-color 0.2s, outline 0.2s; 
+  }
+  .dropzone.over { outline: 2px solid var(--accent); background: #eff6ff; }
+  .dropzone .card { box-shadow: none; cursor: default; }
+  .option-pool { background:#f9fafb; border: 1px solid var(--line); border-radius: 8px; padding: 12px; display:flex; flex-wrap:wrap; gap:8px; margin-top: 12px; min-height: 48px; }
+  .card { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:8px 12px; display:inline-flex; align-items:center; cursor:grab; box-shadow:0 2px 4px rgba(0,0,0,.05); user-select:none; transition: box-shadow 0.2s; }
+  .card:active { cursor: grabbing; box-shadow: var(--shadow); }
+  .card.ghost { opacity: 0.4; }
+  button { padding: 8px 12px; border: 1px solid var(--line); background: #fff; border-radius: 6px; cursor: pointer; transition: all 0.2s; font-size: 14px; }
+  button:hover { background: #f8fafc; border-color: #cbd5e1; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.primary:hover { background: #2563eb; }
+  .practice-nav { background: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 16px; box-shadow: 0 -2px 5px rgba(0,0,0,.05); flex-wrap: wrap; position: fixed; left: 0; right: 0; bottom: 0; border-top: 1px solid var(--line); z-index: 4000; }
+  .practice-nav .title { font-weight: 600; color: var(--muted); }
+  .practice-nav .questions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .practice-nav .q-item { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; font-size: 14px; transition: all 0.2s; min-width: 36px; text-align: center; }
+  .practice-nav .q-item:hover { background: #f1f5f9; border-color: var(--accent); }
+  .practice-nav .q-item.answered { background: #e0e7ff; border-color: var(--accent); color: var(--accent); font-weight: 500; }
+  .practice-nav .controls { display: flex; gap: 12px; margin-left: auto; align-items: center; }
+  #timer { background: #fff; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-family: 'Courier New', monospace; transition: all 0.2s; min-width: 70px; text-align: center; font-size: 14px; font-weight: bold; }
+  #timer:hover { background: #f1f5f9; border-color: var(--accent); }
+  #timer.paused { color: #ef4444; border-color: #fecaca; background: #fef2f2; }
+  .theme-toggle { background: #fff; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; width: 32px; height: 32px; font-size: 16px; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; }
+  #selbar { position: absolute; display: none; z-index: 2000; background: #111; color: #fff; border-radius: 8px; padding: 6px; box-shadow: var(--shadow); font-size: 13px; gap: 6px; align-items: center; }
+  #selbar button { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.25); padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+  #notes { position: fixed; right: 12px; bottom: 85px; width: 320px; height: 42vh; background: #fff; border: 1px solid var(--line); border-radius: 12px; display: none; flex-direction: column; z-index: 1500; box-shadow: var(--shadow); }
+  #notes header { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  #notes textarea { flex: 1; border: 0; padding: 10px; resize: none; font-size: 14px; line-height: 1.5; background-color: inherit; color: inherit; }
+  #toast { position: fixed; bottom: 85px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: #fff; padding: 8px 16px; border-radius: 4px; display: none; z-index: 3000; font-size: 14px; }
+  #results { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 16px 0; }
+  #results p { margin: 0 0 8px; }
+  #results pre { font-family: monospace; white-space: pre-wrap; margin: 0; }
+  .badge { background: #eef2ff; color: #4338ca; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; font-weight: 500; }
+  details.answerbox { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-top: 10px; }
+  details.answerbox summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; align-items: center; justify-content: space-between; }
+  details.answerbox summary::-webkit-details-marker { display: none; }
+  #answerContent { margin-top: 10px; }
+  #answerContent ol { margin: 0; padding-left: 20px; }
+  .hl { background: #fff3a3; }
+  body.dark { --bg: #0f172a; --panel: #1e293b; --line: #334155; --muted: #94a3b8; color: #e2e8f0; }
+  body.dark .pane, body.dark #right { background: var(--panel); }
+  body.dark #right { background: #131c2d; }
+  body.dark button, body.dark .theme-toggle { background: #334155; color: #e2e8f0; border-color: #475569; }
+  body.dark .group, body.dark #results, body.dark details.answerbox, body.dark #notes { background: #1e293b; border-color: #334155; }
+  body.dark .practice-nav { background: #1e293b; border-top-color: #334155; }
+  body.dark .q-item { background: #334155; color: #e2e8f0; border-color: #475569; }
+  body.dark .q-item.answered { background: #1e40af; border-color: var(--accent); color: #93c5fd; }
+  body.dark #timer.paused { background: #402323; color: #f87171; border-color: #7f1d1d; }
+  body.dark .hl { background: #b45309; }
+  body.dark .option-pool { background:#0f172a; border-color: var(--line); }
+  body.dark .card { background: #334155; border-color: #475569; }
+  body.dark .dropzone { border-color: #475569; background: #131c2d; }
+  body.dark .dropzone.over { background: #1e293b; }
+  body.dark .badge { background: #312e81; color: #a5b4fc; }
+  @media (max-width: 768px) {
+    .shell { flex-direction: column; height: auto; }
+    #left, #right { min-height: 50vh; }
+    #divider { display: none; }
+    #notes { width: calc(100vw - 24px); right: 12px; left: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 1. Bottom Navigation Bar -->
+<div class="practice-nav">
+  <div class="title">Questions</div>
+  <div class="questions">
+    <div class="q-item" id="q27-nav" onclick="scrollToElement('q27-anchor')">27</div>
+    <div class="q-item" id="q28-nav" onclick="scrollToElement('q27-anchor')">28</div>
+    <div class="q-item" id="q29-nav" onclick="scrollToElement('q27-anchor')">29</div>
+    <div class="q-item" id="q30-nav" onclick="scrollToElement('q27-anchor')">30</div>
+    <div class="q-item" id="q31-nav" onclick="scrollToElement('q31-anchor')">31</div>
+    <div class="q-item" id="q32-nav" onclick="scrollToElement('q31-anchor')">32</div>
+    <div class="q-item" id="q33-nav" onclick="scrollToElement('q31-anchor')">33</div>
+    <div class="q-item" id="q34-nav" onclick="scrollToElement('q31-anchor')">34</div>
+    <div class="q-item" id="q35-nav" onclick="scrollToElement('q31-anchor')">35</div>
+    <div class="q-item" id="q36-nav" onclick="scrollToElement('q36-anchor')">36</div>
+    <div class="q-item" id="q37-nav" onclick="scrollToElement('q36-anchor')">37</div>
+    <div class="q-item" id="q38-nav" onclick="scrollToElement('q36-anchor')">38</div>
+    <div class="q-item" id="q39-nav" onclick="scrollToElement('q36-anchor')">39</div>
+    <div class="q-item" id="q40-nav" onclick="scrollToElement('q36-anchor')">40</div>
+  </div>
+  <div class="controls">
+    <span id="timer" onclick="toggleTimer()">00:00</span>
+    <button class="theme-toggle" onclick="toggleDarkMode()" title="Toggle dark/light mode">☀️</button>
+  </div>
+</div>
+
+<!-- 2. Main Content Shell -->
+<div class="shell">
+  <!-- Left Pane: Reading Passage -->
+  <section class="pane" id="left">
+    <h2>READING PASSAGE 3</h2>
+    <p>You should spend about 20 minutes on Questions 27–40, which are based on Reading Passage 3 below.</p>
+    
+    <h3>Petrol power: an eco-revolution?</h3>
+  
+    <p>Laura Ingalls Wilder's semi-autobiographical novel The Long Winter describes how the inhabitants of a small town called De Smet in the American Midwest narrowly avoided starvation during the severe winter of 1880–1881. Over three metres of snow fell on the northern plains, immobilising the railways and cutting off the settlers from the rest of the world. Laura and her neighbours were only saved when her fiancé and his friend trudged 30 kilometres through the snow to fetch food, risking their lives in the process. The story is a reminder of how lethal geographical isolation and crop failures could be before the advent of modern farming and transportation technologies. Not long ago, subsistence farmers in many countries had to cope with the ‘lean season' – the period of greatest scarcity before new crops became available. In England, late spring was once referred to as the ‘hungry gap'. The situation was made worse by the cost of moving heavy things over muddy dirt roads; three centuries ago, moving goods 50 kilometres on land between, say, Liverpool and Manchester was as expensive as shipping them across the North Atlantic.</p>
+    <p>The development of coal-powered railways and steamships in the 19th century revolutionized the lives of farmers. Instead of having to grow everything they needed, they could now specialise in what they did best and rely on other producers for their remaining needs. The result was not only food and ever-cheaper prices, but the end of widespread famine and starvation, as the surplus from regions with good harvests could now be transported to those that had experienced mediocre ones. Since then, petroleum-derived fuels have largely displaced coal because of their higher energy density, cleaner combustion and greater ease of extraction, further improving road and rail transportation systems.</p>
+    <p>While the convenience of modern methods of transportation is obvious, few people grasp their historical significance in terms of their beneficial impact on large cities and the health of residents. In 1898, delegates gathered in New York City for the world's first international urban-planning conference.</p>
+    <p>The topic that dominated discussions was not infrastructure or housing, but horse manure. The problem was that as the populations of cities like New York and London grew, the number of horses there also grew, and in New York these produced nearly two million kilograms of manure each day. If this problem continued, it was estimated that by 1950 every street in London would be buried three metres deep in horse manure. Unable to think of any solution, the delegates concluded that urban living was inherently unsustainable.</p>
+    <p>Paradoxically, much of the urban manure problem was related to the growth of the railways. The ability to deliver perishable goods, such as meat and dairy products, from locations that benefited from better soil and climate, put many farms located near cities out of business. As these had relied on manure from city workhorses for fertiliser, the demand for this was greatly reduced.</p>
+    <p>The impact of urban workhorses was felt both in the cities and in the countryside. In cities, apart from their overpowering stench, the manure piles were prime breeding grounds for house flies, perhaps three billion of which hatched each day in US cities in the early 20th century. With flies came outbreaks of typhoid, cholera and diphtheria. Workhorses sometimes panicked in heavy traffic and kicked or bit bystanders. The clatter of wagon wheels on cobblestone pavement could be deafening, and since a horse and wagon occupied more street space than a modern truck, they also created significant traffic congestion, while a horse that collapsed on the road created an obstruction that was difficult to remove. The countryside also suffered. To supply the workhorses with oats and hay, additional land had to be cleared of its natural animal life and vegetation, and sometimes water had to be diverted to irrigate it, with considerable negative effects on the whole area.</p>
+    <p>So, while the trains, cars and trucks of the early 20th century were noisy and polluting by today's standards, they were regarded as a significant improvement on what had gone before. Before they were available, poor soils often meant that a large amount of land was required to sustain a household, and much environmental damage, primarily in the form of soil erosion, was caused by trying to farm these soils. It could be argued that modern transportation allowed the development of remote regions like the Canadian Prairies and allowed more suitable crops to be grown in the poorer soils in Europe before being sold elsewhere.</p>
+    <p>Over time, the concentration of food production in the world's best locations allowed some agricultural land to revert to a wild state. For instance, France benefited from an expansion of its forest area by one third between 1830 and 1960. This so-called 'forest transition' occurred in the context of a doubling of the French population and a dramatic increase in standards of living.</p>
+    <p>Improvements in logistics also allowed the production and export of food from locations where water was abundant to regions where it was scarce, thus preventing the depletion of water resources there. It also made possible a drastic increase in the size of our cities. Contrary to what most people believe, the growth in cities is a positive development. In the words of economist Ed Glaeser: ‘Residing in a forest might seem to be a good way of showing one's love of nature, but living in a concrete jungle is actually far more ecologically friendly... If you love nature, stay away from it.' It could be argued that modern transportation technologies have been a major contributor to a wealthier, cleaner and more sustainable world.</p>
+    
+    <p>&nbsp;</p> <!-- Final padding -->
+  </section>
+
+  <!-- Draggable Divider -->
+  <div id="divider" title="Drag to resize"></div>
+
+  <!-- Right Pane: Questions and Controls -->
+  <section class="pane" id="right">
+    <h3>Questions</h3>
+    
+    <div class="group">
+      <a id="q27-anchor"></a>
+      <h4>Questions 27–30</h4>
+      <p>Choose the correct letter, A, B, C or D.</p>
+      <div class="q-block"><p><strong>27</strong> Why were the inhabitants of De Smet in danger of starvation?</p><div class="options"><label><input type="radio" name="q27" value="A"> A The trains were unable to operate normally.</label><label><input type="radio" name="q27" value="B"> B The harvest had been completely destroyed.</label><label><input type="radio" name="q27" value="C"> C The roads to the town had not yet been built.</label><label><input type="radio" name="q27" value="D"> D The farmers were reluctant to sell their produce.</label></div></div>
+      <div class="q-block"><p><strong>28</strong> What problem did subsistence farmers have in the past?</p><div class="options"><label><input type="radio" name="q28" value="A"> A They had no effective means of storing food.</label><label><input type="radio" name="q28" value="B"> B Food was expensive because of high shipping costs.</label><label><input type="radio" name="q28" value="C"> C Their access to food was limited at certain times.</label><label><input type="radio" name="q28" value="D"> D Food could not be transported for long distances by road.</label></div></div>
+      <div class="q-block"><p><strong>29</strong> The writer says that the use of coal to power railways and steamships</p><div class="options"><label><input type="radio" name="q29" value="A"> A led to a greater range of fresh vegetables being available in urban areas.</label><label><input type="radio" name="q29" value="B"> B was less efficient than the use of petroleum-derived products.</label><label><input type="radio" name="q29" value="C"> C allowed farmers to be more self-sufficient than they were previously.</label><label><input type="radio" name="q29" value="D"> D was better for the environment than using petroleum-derived products.</label></div></div>
+      <div class="q-block"><p><strong>30</strong> The writer refers to an urban-planning conference held in 1898 in order to</p><div class="options"><label><input type="radio" name="q30" value="A"> A illustrate a problem that was later solved by modern technology.</label><label><input type="radio" name="q30" value="B"> B give an example of poor decisions made about urban planning.</label><label><input type="radio" name="q30" value="C"> C show that urban issues were misunderstood in the past.</label><label><input type="radio" name="q30" value="D"> D indicate the disregard at the time for public health concerns.</label></div></div>
+    </div>
+    
+    <div class="group">
+      <a id="q31-anchor"></a>
+      <h4>Questions 31–35</h4>
+      <p>Complete the summary using the list of words, A–J, below.</p>
+      <h5>Problems caused by urban workhorses</h5>
+      <p>In cities, the large amounts of horse manure led to <strong>31</strong> <span class="dropzone" data-target="q31"></span> in the streets and were also linked to the spread of <strong>32</strong> <span class="dropzone" data-target="q32"></span>. In certain situations, the horses might even cause <strong>33</strong> <span class="dropzone" data-target="q33"></span> to passers-by. There were also the problems of noise and congestion caused by horse-drawn vehicles. In the countryside, there were problems too. The <strong>34</strong> <span class="dropzone" data-target="q34"></span> was damaged because of the need to provide <strong>35</strong> <span class="dropzone" data-target="q35"></span> for urban workhorses.</p>
+      <div class="option-pool" id="pool-summary">
+        <div class="card" draggable="true" data-value="A">A rich landowners</div><div class="card" draggable="true" data-value="B">B injuries</div><div class="card" draggable="true" data-value="C">C food</div><div class="card" draggable="true" data-value="D">D accidental falls</div><div class="card" draggable="true" data-value="E">E environment</div><div class="card" draggable="true" data-value="F">F dangerous area</div><div class="card" draggable="true" data-value="G">G use of irrigation</div><div class="card" draggable="true" data-value="H">H unpleasant smells</div><div class="card" draggable="true" data-value="I">I treatment</div><div class="card" draggable="true" data-value="J">J diseases</div>
+      </div>
+    </div>
+
+    <div class="group">
+      <a id="q36-anchor"></a>
+      <h4>Questions 36–40</h4>
+      <p>Do the following statements agree with the views of the writer in Reading Passage 3?</p>
+      <div class="q-block"><p><strong>36</strong> Farmers whose land was poor failed to benefit from modern forms of transport.</p><div class="options" style="flex-direction:row;"><label><input type="radio" name="q36" value="yes"> YES</label><label><input type="radio" name="q36" value="no"> NO</label><label><input type="radio" name="q36" value="not given"> NOT GIVEN</label></div></div>
+      <div class="q-block"><p><strong>37</strong> Between 1830 and 1960 there were positive effects associated with changing patterns of agriculture in France.</p><div class="options" style="flex-direction:row;"><label><input type="radio" name="q37" value="yes"> YES</label><label><input type="radio" name="q37" value="no"> NO</label><label><input type="radio" name="q37" value="not given"> NOT GIVEN</label></div></div>
+      <div class="q-block"><p><strong>38</strong> A fairer distribution of the world's water resources is needed.</p><div class="options" style="flex-direction:row;"><label><input type="radio" name="q38" value="yes"> YES</label><label><input type="radio" name="q38" value="no"> NO</label><label><input type="radio" name="q38" value="not given"> NOT GIVEN</label></div></div>
+      <div class="q-block"><p><strong>39</strong> Living in the countryside does less harm to the environment than living in a city.</p><div class="options" style="flex-direction:row;"><label><input type="radio" name="q39" value="yes"> YES</label><label><input type="radio" name="q39" value="no"> NO</label><label><input type="radio" name="q39" value="not given"> NOT GIVEN</label></div></div>
+      <div class="q-block"><p><strong>40</strong> It is possible that modern developments in transportation have had an beneficial impact on the world.</p><div class="options" style="flex-direction:row;"><label><input type="radio" name="q40" value="yes"> YES</label><label><input type="radio" name="q40" value="no"> NO</label><label><input type="radio" name="q40" value="not given"> NOT GIVEN</label></div></div>
+    </div>
+
+    <!-- Controls and Results -->
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <button class="primary" onclick="grade()">Submit</button>
+      <button onclick="resetForm()">Reset</button>
+      <button onclick="toggleNotes()">Notes</button>
+    </div>
+    <div id="results"></div>
+    <details class="answerbox" id="answerBox">
+      <summary>Show answers (click to toggle) <span class="badge">hidden</span></summary>
+      <div id="answerContent"></div>
+    </details>
+  </section>
+</div>
+
+<!-- 3. UI Helper Elements -->
+<div aria-label="Selection tools" id="selbar" role="toolbar">
+  <button id="btnHL">Highlight</button>
+  <button id="btnUH">Remove</button>
+  <button id="btnNote">Note</button>
+</div>
+<div id="notes">
+  <header><strong>Notes</strong><div><button id="btnCopy">Copy</button><button id="btnClose">Close</button></div></header>
+  <textarea id="noteArea" placeholder="Type your notes here..."></textarea>
+</div>
+<div id="toast"></div>
+
+<script>
+// --- MASTER JAVASCRIPT TEMPLATE ---
+
+// 1. STATE & ANSWERS
+const answers = {
+    q27: "a", q28: "c", q29: "b", q30: "a",
+    q31: "h", q32: "j", q33: "b", q34: "e", q35: "c",
+    q36: "no", q37: "yes", q38: "not given", q39: "no", q40: "yes"
+};
+
+// 2. UI & INTERACTIVITY
+let timerSeconds = 0, isTimerPaused = false;
+const timerEl = document.getElementById('timer');
+
+function toggleTimer() { isTimerPaused = !isTimerPaused; timerEl.classList.toggle('paused', isTimerPaused); showToast(isTimerPaused ? 'Timer paused' : 'Timer resumed'); }
+setInterval(() => { if (!isTimerPaused) { timerSeconds++; const m = String(Math.floor(timerSeconds / 60)).padStart(2, '0'); const s = String(timerSeconds % 60).padStart(2, '0'); timerEl.textContent = `${m}:${s}`; } }, 1000);
+function toggleDarkMode() { document.body.classList.toggle('dark'); const isDark = document.body.classList.contains('dark'); localStorage.setItem('darkMode', isDark ? 'enabled' : 'disabled'); document.querySelector('.theme-toggle').textContent = isDark ? '🌙' : '☀️'; }
+function scrollToElement(id) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+function showToast(msg) { const toastEl = document.getElementById('toast'); toastEl.textContent = msg; toastEl.style.display = 'block'; setTimeout(() => { toastEl.style.display = 'none'; }, 1500); }
+
+// 3. HIGHLIGHT AND NOTES FUNCTIONALITY
+const selbar = document.getElementById('selbar');
+let lastRange = null;
+function handleTextSelection() { setTimeout(() => { const sel = window.getSelection(); if (sel.toString().trim().length > 0) { lastRange = sel.getRangeAt(0).cloneRange(); const rect = lastRange.getBoundingClientRect(); selbar.style.top = `${window.scrollY + rect.top - selbar.offsetHeight - 5}px`; selbar.style.left = `${window.scrollX + rect.left + rect.width / 2 - selbar.offsetWidth / 2}px`; selbar.style.display = 'flex'; } else { selbar.style.display = 'none'; } }, 10); }
+['left', 'right'].forEach(id => document.getElementById(id).addEventListener('mouseup', handleTextSelection));
+document.addEventListener('mousedown', (e) => { if (!selbar.contains(e.target)) selbar.style.display = 'none'; });
+document.getElementById('btnHL').addEventListener('click', () => { if (lastRange) { const span = document.createElement('span'); span.className = 'hl'; try { lastRange.surroundContents(span); } catch(e) { console.error(e); } selbar.style.display = 'none'; window.getSelection().removeAllRanges(); } });
+document.getElementById('btnUH').addEventListener('click', () => { if (lastRange) { let container = lastRange.commonAncestorContainer; if (container.nodeType !== 1) container = container.parentElement; const highlights = container.querySelectorAll('.hl'); highlights.forEach(hl => { if (window.getSelection().containsNode(hl, true)) { const parent = hl.parentNode; while (hl.firstChild) parent.insertBefore(hl.firstChild, hl); parent.removeChild(hl); parent.normalize(); } }); selbar.style.display = 'none'; window.getSelection().removeAllRanges(); } });
+document.getElementById('btnNote').addEventListener('click', () => { const text = window.getSelection().toString().trim(); if (text) { const noteArea = document.getElementById('noteArea'); noteArea.value += (noteArea.value ? '\n\n' : '') + `> ${text}`; toggleNotes(); noteArea.scrollTop = noteArea.scrollHeight; } selbar.style.display = 'none'; });
+function toggleNotes() { const notePad = document.getElementById('notes'); notePad.style.display = notePad.style.display === 'flex' ? 'none' : 'flex'; }
+document.getElementById('btnClose').addEventListener('click', toggleNotes);
+document.getElementById('btnCopy').addEventListener('click', () => { navigator.clipboard.writeText(document.getElementById('noteArea').value); showToast('Notes copied'); });
+
+// 4. DRAG AND DROP LOGIC
+document.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', e.target.id); setTimeout(() => e.target.classList.add('ghost'), 0); });
+    card.addEventListener('dragend', e => e.target.classList.remove('ghost'));
+});
+document.querySelectorAll('.dropzone').forEach(zone => {
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+    zone.addEventListener('drop', e => {
+        e.preventDefault(); zone.classList.remove('over');
+        const cardId = e.dataTransfer.getData('text/plain');
+        const draggedCard = document.getElementById(cardId);
+        if (!draggedCard) return;
+        const cardToDrop = draggedCard.dataset.clone === 'true' ? draggedCard.cloneNode(true) : draggedCard;
+        cardToDrop.classList.remove('ghost');
+        if (zone.children.length > 0) {
+            const existingCard = zone.children[0];
+            if (existingCard.dataset.clone !== 'true') {
+                const itsOriginPool = document.getElementById(existingCard.dataset.originPool);
+                if (itsOriginPool) itsOriginPool.appendChild(existingCard);
+            }
+        }
+        zone.innerHTML = '';
+        zone.appendChild(cardToDrop);
+        updateAnswerStatus();
+    });
+});
+
+// 5. GRADING & STATE MANAGEMENT
+function grade() {
+    let total = 0, correct = 0, lines = [];
+    const push = (q, ok, user, correctAns) => { total++; if(ok) correct++; const displayAns = String(correctAns).toUpperCase(); lines.push(`${q.toUpperCase().replace('Q','')}: ${user || 'None'} ${ok ? '✅' : `❌ (Ans: ${displayAns})`}`); };
+    Object.keys(answers).forEach(qKey => {
+        const correctAns = answers[qKey];
+        let userAnswer = null;
+        const radio = document.querySelector(`input[name="${qKey}"]:checked`);
+        const dropzone = document.querySelector(`.dropzone[data-target="${qKey}"]`);
+        if (radio) userAnswer = radio.value;
+        else if (dropzone) userAnswer = dropzone.querySelector('.card')?.dataset.value || null;
+        const isCorrect = userAnswer !== null && userAnswer.toLowerCase() === String(correctAns).toLowerCase();
+        push(qKey, isCorrect, userAnswer, correctAns);
+    });
+    const acc = total ? Math.round(100 * correct / total) : 0;
+    document.getElementById('results').innerHTML = `<p><strong>Score:</strong> ${correct}/${total} <span class="badge">Accuracy ${acc}%</span></p><pre>${lines.join('\n')}</pre>`;
+    document.getElementById('answerContent').innerHTML = `<ol start="27">${Object.entries(answers).map(([key, val]) => `<li><strong>${key.replace('q','')}:</strong> ${String(val).toUpperCase()}</li>`).join('')}</ol>`;
+    document.querySelector('#answerBox .badge').textContent = 'tap to view';
+    document.getElementById('answerBox').open = true;
+}
+
+function resetForm() {
+    document.querySelectorAll('input[type="radio"]').forEach(radio => radio.checked = false);
+    document.querySelectorAll('.dropzone').forEach(zone => {
+        if (zone.children.length > 0) {
+            const card = zone.children[0];
+            if (card.dataset.clone !== 'true') {
+                const originPool = document.getElementById(card.dataset.originPool);
+                if (originPool) originPool.appendChild(card);
+            }
+        }
+        zone.innerHTML = '';
+    });
+    document.getElementById('results').innerHTML = '';
+    document.getElementById('answerContent').innerHTML = '';
+    document.querySelector('#answerBox .badge').textContent = 'hidden';
+    document.getElementById('answerBox').open = false;
+    updateAnswerStatus();
+    showToast('Form has been reset');
+}
+
+function updateAnswerStatus() {
+    document.querySelectorAll('.q-item').forEach(item => {
+        const qNum = item.id.replace('-nav', '');
+        let answered = false;
+        const radio = document.querySelector(`input[name="${qNum}"]:checked`);
+        const dropzone = document.querySelector(`.dropzone[data-target="${qNum}"]`);
+        if (radio) answered = true;
+        else if (dropzone) answered = !!dropzone.querySelector('.card');
+        item.classList.toggle('answered', answered);
+    });
+}
+
+// 6. INITIALIZATION
+document.addEventListener('DOMContentLoaded', () => {
+    if (localStorage.getItem('darkMode') === 'enabled') {
+        toggleDarkMode();
+        document.querySelector('.theme-toggle').textContent = '🌙';
+    }
+    document.querySelectorAll('input[type="radio"]').forEach(el => el.addEventListener('change', updateAnswerStatus));
+    document.querySelectorAll('.card').forEach((card, index) => {
+        if (!card.id) card.id = `card-${index}`;
+        if (card.parentElement.classList.contains('option-pool')) {
+            card.dataset.originPool = card.parentElement.id;
+            card.parentElement.addEventListener('dragover', e => e.preventDefault());
+            card.parentElement.addEventListener('drop', e => {
+                e.preventDefault();
+                const cardId = e.dataTransfer.getData('text/plain');
+                const dragged = document.getElementById(cardId);
+                if (dragged && dragged.parentElement.classList.contains('dropzone')) {
+                    dragged.parentElement.innerHTML = '';
+                    if (dragged.dataset.clone !== 'true') e.currentTarget.appendChild(dragged);
+                    updateAnswerStatus();
+                }
+            });
+        }
+    });
+});
+</script>
+
+<!-- Practice page enhancer integration -->
+<script>
+  if (!window.practicePageEnhancer) {
+    const script = document.createElement('script');
+    script.src = '../../js/practice-page-enhancer.js';
+    script.onload = () => console.log('Enhancer loaded.');
+    script.onerror = () => { console.error('Enhancer failed to load'); loadInlineEnhancer(); };
+    document.head.appendChild(script);
+  }
+  function loadInlineEnhancer() { if (window.practicePageEnhancer) return; window.practicePageEnhancer = { initialize: function () { this.setupCommunication(); this.setupAnswerListeners(); this.interceptSubmit(); }, setupCommunication: function () { this.parentWindow = window.opener || window.parent; window.addEventListener('message', (e) => { if (e.data?.type === 'INIT_SESSION') { this.sessionId = e.data.data.sessionId; this.sendMessage('SESSION_READY', { pageType: this.detectPageType(), url: window.location.href }); } }); }, detectPageType: () => { const t = document.title || ''; if (t.includes('P1')) return 'P1'; if (t.includes('P2')) return 'P2'; if (t.includes('P3')) return 'P3'; return 'unknown'; }, setupAnswerListeners: function () { this.answers = {}; this.startTime = Date.now(); document.addEventListener('change', (e) => { if (e.target.name) this.answers[e.target.name] = e.target.value; }); const observer = new MutationObserver(mutations => { mutations.forEach(mutation => { if (mutation.type === 'childList' && mutation.target.classList.contains('dropzone')) { const zone = mutation.target; const qName = zone.dataset.target; const card = zone.querySelector('.card'); this.answers[qName] = card ? card.dataset.value : ''; } }); }); document.querySelectorAll('.dropzone').forEach(zone => observer.observe(zone, { childList: true })); }, interceptSubmit: function () { if (typeof window.grade === 'function') { const originalGrade = window.grade; window.grade = () => { originalGrade(); setTimeout(() => this.handleSubmit(), 200); }; } }, handleSubmit: function () { const results = { sessionId: this.sessionId, startTime: this.startTime, endTime: Date.now(), duration: Math.round((Date.now() - this.startTime) / 1000), answers: this.answers, scoreInfo: this.extractScore(), pageType: this.detectPageType(), url: window.location.href }; this.sendMessage('PRACTICE_COMPLETE', results); }, extractScore: () => { const el = document.getElementById('results'); if (!el) return null; const text = el.textContent || ''; const scoreMatch = text.match(/Score:\s*(\d+)\/(\d+)/i); if (scoreMatch) { const correct = parseInt(scoreMatch[1]), total = parseInt(scoreMatch[2]); return { correct, total, accuracy: total > 0 ? correct / total : 0, percentage: Math.round((correct / total) * 100), source: 'inline_extraction' }; } return null; }, sendMessage: function (type, data) { if (this.parentWindow) this.parentWindow.postMessage({ type, data, source: 'practice_page' }, '*'); } }; if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.practicePageEnhancer.initialize()); else window.practicePageEnhancer.initialize(); }
+</script>
+
+</body>
+</html>

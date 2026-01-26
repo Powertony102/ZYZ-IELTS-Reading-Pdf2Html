@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>$TITLE</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --line: #e5e7eb;
+      --accent: #2563eb;
+      --muted: #6b7280;
+      --danger: #b91c1c;
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: #111827;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      padding-bottom: 90px;
+    }
+    h1, h2, h3, h4 { margin: 0 0 10px; }
+    p { margin: 0 0 12px; line-height: 1.6; }
+    .shell { display: flex; min-height: 100vh; }
+    .pane {
+      padding: 18px;
+      background: var(--panel);
+      overflow-y: auto;
+    }
+    #left { flex: 0 0 48%; min-width: 320px; border-right: 1px solid var(--line); }
+    #right { flex: 1 1 auto; min-width: 360px; background: #fbfbff; }
+    #divider { width: 8px; background: #e5e7eb; cursor: ew-resize; }
+    .muted { color: var(--muted); font-size: 14px; }
+    .paragraph-label { font-weight: 700; color: var(--accent); margin-right: 6px; }
+    .question { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 14px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.03); }
+    .q-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .q-number { display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 8px; background: #eef2ff; color: #312e81; font-weight: 700; }
+    .q-meta { font-size: 12px; color: var(--muted); text-transform: uppercase; }
+    .options { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .options.inline { flex-direction: row; flex-wrap: wrap; }
+    .options label { display: flex; gap: 8px; cursor: pointer; align-items: center; }
+    .text-input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 15px; }
+    .inline-input { width: 120px; display: inline-block; }
+    .select-input { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; min-width: 140px; }
+    .option-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .option-pill { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: #f8fafc; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+    button {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    button.danger { color: var(--danger); border-color: #fecdd3; }
+    button:hover { background: #f1f5f9; }
+    button.primary:hover { background: #1d4ed8; }
+    button.danger:hover { background: #fee2e2; }
+    .practice-nav {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      background: #fff; border-top: 1px solid var(--line);
+      display: flex; gap: 10px; align-items: center; padding: 10px 14px;
+      box-shadow: 0 -4px 12px rgba(0,0,0,0.06); z-index: 900;
+    }
+    .practice-nav .nav-items { display: flex; gap: 6px; flex-wrap: wrap; }
+    .practice-nav .nav-label { font-weight: 600; color: var(--muted); }
+    .q-nav { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; min-width: 36px; }
+    .q-nav.answered { background: #dbeafe; border-color: #bfdbfe; color: #1d4ed8; font-weight: 600; }
+    #floating-timer {
+      position: fixed; right: 14px; bottom: 78px;
+      background: #0f172a; color: #e2e8f0;
+      padding: 8px 10px; border-radius: 10px; box-shadow: var(--shadow);
+      display: flex; align-items: center; gap: 8px; z-index: 950;
+    }
+    #timer { font-family: "Courier New", monospace; font-weight: 700; }
+    #results { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fff; margin-top: 12px; }
+    #results pre { margin: 8px 0 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    #answer-box { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: #fff; }
+    #answer-box summary { cursor: pointer; font-weight: 700; }
+    #selbar {
+      position: absolute; display: none; z-index: 1200;
+      background: #111; color: #fff; padding: 6px 8px;
+      border-radius: 8px; gap: 6px; align-items: center;
+    }
+    #selbar button {
+      background: rgba(255,255,255,0.08);
+      color: #fff; border-color: rgba(255,255,255,0.25);
+    }
+    .hl { background: #fff3a3; }
+    #note-panel {
+      position: fixed; right: 12px; bottom: 130px; width: 320px; height: 42vh;
+      background: #fff; border: 1px solid var(--line); border-radius: 12px;
+      box-shadow: var(--shadow); display: none; flex-direction: column; z-index: 940;
+    }
+    #note-panel header { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    #note-panel textarea { flex: 1; border: none; padding: 10px; resize: none; font-size: 14px; }
+    #toast {
+      position: fixed; left: 50%; transform: translateX(-50%);
+      bottom: 140px; padding: 8px 12px; background: rgba(0,0,0,0.8);
+      color: #fff; border-radius: 8px; display: none; z-index: 960;
+    }
+    @media (max-width: 900px) {
+      .shell { flex-direction: column; }
+      #divider { display: none; }
+      #left, #right { min-height: 45vh; width: 100%; }
+      #floating-timer { bottom: 120px; }
+      #note-panel { width: calc(100vw - 24px); right: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="floating-timer">
+    <div id="timer">00:00</div>
+    <button id="timer-toggle">Pause</button>
+  </div>
+
+  <div class="shell">
+    <section id="left" class="pane">
+      <h2>Reading Passage</h2>
+      <p class="muted">Offline practice – highlights and answers auto-save in this browser.</p>
+      <div id="passage-content">$PASSAGE_HTML</div>
+    </section>
+    <div id="divider" title="Drag to resize (optional)"></div>
+    <section id="right" class="pane">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px; margin-bottom: 8px;">
+        <div>
+          <h2>Questions</h2>
+          <p class="muted">Submit to reveal score and key.</p>
+        </div>
+        <div class="controls">
+          <button id="btn-save">Save</button>
+          <button id="btn-notes">Notes</button>
+          <button id="btn-submit" class="primary">Submit</button>
+          <button id="btn-reset" class="danger">Reset</button>
+        </div>
+      </div>
+      <div id="question-content">$QUESTION_HTML</div>
+      <div id="results"></div>
+      <details id="answer-box">
+        <summary>Answers</summary>
+        <div id="answer-content"></div>
+      </details>
+    </section>
+  </div>
+
+  <div class="practice-nav">
+    <div class="nav-label">Questions</div>
+    <div class="nav-items">$QUESTION_NAV</div>
+  </div>
+
+  <div id="selbar">
+    <button id="btn-hl">Highlight</button>
+    <button id="btn-hl-remove">Remove</button>
+  </div>
+
+  <div id="note-panel">
+    <header><strong>Notes</strong><div class="controls"><button id="btn-copy">Copy</button><button id="btn-close-notes">Close</button></div></header>
+    <textarea id="note-area" placeholder="Notes auto-save locally."></textarea>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    const ANSWERS = $ANSWERS_JSON;
+    const QUESTION_META = $QUESTION_META_JSON;
+    const STORAGE_KEY = "$STORAGE_KEY";
+
+    let timerSeconds = 0;
+    let timerPaused = false;
+    let lastRange = null;
+    let saveTimer = null;
+
+    const timerEl = document.getElementById("timer");
+    const passageEl = document.getElementById("passage-content");
+    const questionEl = document.getElementById("question-content");
+    const selbar = document.getElementById("selbar");
+    const notePanel = document.getElementById("note-panel");
+    const noteArea = document.getElementById("note-area");
+
+    function showToast(msg) {
+      const toast = document.getElementById("toast");
+      toast.textContent = msg;
+      toast.style.display = "block";
+      setTimeout(() => toast.style.display = "none", 1500);
+    }
+
+    function tickTimer() {
+      if (timerPaused) return;
+      timerSeconds += 1;
+      const m = String(Math.floor(timerSeconds / 60)).padStart(2, "0");
+      const s = String(timerSeconds % 60).padStart(2, "0");
+      timerEl.textContent = m + ":" + s;
+    }
+
+    function toggleTimer() {
+      timerPaused = !timerPaused;
+      document.getElementById("timer-toggle").textContent = timerPaused ? "Resume" : "Pause";
+      persistState();
+    }
+
+    function scrollToQuestion(qid) {
+      const target = document.getElementById(qid);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function normalizeAnswer(val) {
+      if (!val) return "";
+      const v = String(val).trim();
+      const lookup = { t:"TRUE", f:"FALSE", y:"YES", n:"NO", ng:"NOT GIVEN" };
+      const key = v.toLowerCase();
+      if (lookup[key]) return lookup[key];
+      return v.toUpperCase();
+    }
+
+    function currentAnswers() {
+      const data = {};
+      document.querySelectorAll("input[type=radio]:checked").forEach(el => data[el.name] = el.value);
+      document.querySelectorAll("input.text-input").forEach(el => { if (el.value) data[el.name] = el.value; else if (data[el.name]) delete data[el.name]; });
+      document.querySelectorAll("select").forEach(el => { if (el.value) data[el.name] = el.value; else if (data[el.name]) delete data[el.name]; });
+      return data;
+    }
+
+    function markNavStatus() {
+      const answers = currentAnswers();
+      document.querySelectorAll(".q-nav").forEach(btn => {
+        const key = btn.dataset.target;
+        btn.classList.toggle("answered", Boolean(answers[key]));
+      });
+    }
+
+    function grade() {
+      let total = 0, correct = 0;
+      const lines = [];
+      Object.keys(ANSWERS).forEach(key => {
+        const expected = normalizeAnswer(ANSWERS[key]);
+        const user = normalizeAnswer(getUserAnswer(key));
+        if (!expected) {
+          lines.push(key.replace("q","") + ": " + (user || "None") + " (No key)");
+          return;
+        }
+        total += 1;
+        const ok = user && expected === user;
+        if (ok) correct += 1;
+        lines.push(key.replace("q","") + ": " + (user || "None") + (ok ? " ✅" : " ❌ (Ans: " + expected + ")"));
+      });
+      const acc = total ? Math.round((correct / total) * 100) : 0;
+      document.getElementById("results").innerHTML = "<div><strong>Score:</strong> " + correct + "/" + total + " <span class='muted'>(Accuracy " + acc + "%)</span></div><pre>" + lines.join("\\n") + "</pre>";
+      document.getElementById("answer-content").innerHTML = buildAnswerList();
+      document.getElementById("answer-box").open = true;
+      persistState(true);
+    }
+
+    function buildAnswerList() {
+      const items = Object.keys(ANSWERS).map(key => {
+        const expected = normalizeAnswer(ANSWERS[key]) || "-";
+        return "<li><strong>" + key.replace("q","") + ":</strong> " + expected + "</li>";
+      });
+      return "<ol>" + items.join("") + "</ol>";
+    }
+
+    function getUserAnswer(qid) {
+      const radio = document.querySelector("input[name='" + qid + "']:checked");
+      if (radio) return radio.value;
+      const textInput = document.querySelector("input[name='" + qid + "']");
+      if (textInput && textInput.value) return textInput.value;
+      const select = document.querySelector("select[name='" + qid + "']");
+      if (select && select.value) return select.value;
+      return "";
+    }
+
+    function persistState(manual) {
+      const state = {
+        answers: currentAnswers(),
+        timerSeconds: timerSeconds,
+        timerPaused: timerPaused,
+        passageHtml: passageEl.innerHTML,
+        questionHtml: questionEl.innerHTML,
+        notes: noteArea.value,
+        resultsHtml: document.getElementById("results").innerHTML,
+        answerHtml: document.getElementById("answer-content").innerHTML,
+        answerBoxOpen: document.getElementById("answer-box").open
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      if (manual) showToast("Saved locally");
+    }
+
+    function loadState() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; }
+    }
+
+    function applyState(state) {
+      if (!state) return;
+      if (state.passageHtml) passageEl.innerHTML = state.passageHtml;
+      if (state.questionHtml) questionEl.innerHTML = state.questionHtml;
+      if (typeof state.timerSeconds === "number") timerSeconds = state.timerSeconds;
+      timerPaused = Boolean(state.timerPaused);
+      noteArea.value = state.notes || "";
+      document.getElementById("results").innerHTML = state.resultsHtml || "";
+      document.getElementById("answer-content").innerHTML = state.answerHtml || "";
+      document.getElementById("answer-box").open = Boolean(state.answerBoxOpen);
+      if (state.answers) restoreAnswers(state.answers);
+    }
+
+    function restoreAnswers(saved) {
+      Object.keys(saved).forEach(key => {
+        const val = saved[key];
+        const radio = document.querySelector("input[type=radio][name='" + key + "'][value='" + val + "']");
+        if (radio) radio.checked = true;
+        const textInput = document.querySelector("input.text-input[name='" + key + "']");
+        if (textInput) textInput.value = val;
+        const select = document.querySelector("select[name='" + key + "']");
+        if (select) select.value = val;
+      });
+      markNavStatus();
+    }
+
+    function resetForm() {
+      if (!confirm("Reset all answers, highlights, timer and notes?")) return;
+      if (!confirm("Are you sure? This cannot be undone.")) return;
+      document.querySelectorAll("input[type=radio]").forEach(el => el.checked = false);
+      document.querySelectorAll("input.text-input").forEach(el => el.value = "");
+      document.querySelectorAll("select").forEach(el => el.value = "");
+      document.querySelectorAll(".hl").forEach(el => {
+        const parent = el.parentNode;
+        while (el.firstChild) parent.insertBefore(el.firstChild, el);
+        parent.removeChild(el);
+      });
+      noteArea.value = "";
+      timerSeconds = 0;
+      timerPaused = false;
+      timerEl.textContent = "00:00";
+      document.getElementById("results").innerHTML = "";
+      document.getElementById("answer-content").innerHTML = "";
+      document.getElementById("answer-box").open = false;
+      persistState(true);
+      markNavStatus();
+    }
+
+    function handleSelection() {
+      setTimeout(() => {
+        const sel = window.getSelection();
+        if (!sel || sel.toString().trim().length === 0) { selbar.style.display = "none"; return; }
+        lastRange = sel.getRangeAt(0).cloneRange();
+        const rect = lastRange.getBoundingClientRect();
+        selbar.style.top = (window.scrollY + rect.top - selbar.offsetHeight - 6) + "px";
+        selbar.style.left = (window.scrollX + rect.left + rect.width / 2 - selbar.offsetWidth / 2) + "px";
+        selbar.style.display = "inline-flex";
+      }, 10);
+    }
+
+    function addHighlight() {
+      if (!lastRange) return;
+      const span = document.createElement("span");
+      span.className = "hl";
+      try { lastRange.surroundContents(span); } catch (e) { console.warn(e); }
+      window.getSelection().removeAllRanges();
+      selbar.style.display = "none";
+      persistState();
+    }
+
+    function removeHighlight() {
+      if (!lastRange) return;
+      let container = lastRange.commonAncestorContainer;
+      if (container.nodeType !== 1) container = container.parentElement;
+      container.querySelectorAll(".hl").forEach(el => {
+        const parent = el.parentNode;
+        while (el.firstChild) parent.insertBefore(el.firstChild, el);
+        parent.removeChild(el);
+      });
+      window.getSelection().removeAllRanges();
+      selbar.style.display = "none";
+      persistState();
+    }
+
+    function toggleNotes() {
+      notePanel.style.display = notePanel.style.display === "flex" ? "none" : "flex";
+      persistState();
+    }
+
+    function setupDivider() {
+      const divider = document.getElementById("divider");
+      if (!divider) return;
+      let isDragging = false;
+      divider.addEventListener("mousedown", () => isDragging = true);
+      document.addEventListener("mouseup", () => isDragging = false);
+      document.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        const percent = (e.clientX / window.innerWidth) * 100;
+        document.getElementById("left").style.flex = "0 0 " + Math.min(Math.max(percent, 30), 70) + "%";
+      });
+    }
+
+    function attachListeners() {
+      document.querySelectorAll(".q-nav").forEach(btn => {
+        btn.addEventListener("click", () => scrollToQuestion(btn.dataset.target));
+      });
+      document.querySelectorAll("input[type=radio], input.text-input, select").forEach(el => {
+        el.addEventListener("change", () => { markNavStatus(); debounceSave(); });
+        el.addEventListener("keyup", debounceSave);
+      });
+      document.getElementById("btn-submit").addEventListener("click", grade);
+      document.getElementById("btn-save").addEventListener("click", () => persistState(true));
+      document.getElementById("btn-reset").addEventListener("click", resetForm);
+      document.getElementById("btn-notes").addEventListener("click", toggleNotes);
+      document.getElementById("btn-close-notes").addEventListener("click", toggleNotes);
+      document.getElementById("btn-copy").addEventListener("click", () => { navigator.clipboard.writeText(noteArea.value || ""); showToast("Notes copied"); });
+      document.getElementById("timer-toggle").addEventListener("click", toggleTimer);
+      document.addEventListener("mouseup", handleSelection);
+      document.addEventListener("mousedown", (e) => { if (!selbar.contains(e.target)) selbar.style.display = "none"; });
+      document.getElementById("btn-hl").addEventListener("click", addHighlight);
+      document.getElementById("btn-hl-remove").addEventListener("click", removeHighlight);
+    }
+
+    function debounceSave() {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => persistState(), 400);
+    }
+
+    function init() {
+      applyState(loadState());
+      attachListeners();
+      setupDivider();
+      markNavStatus();
+      timerEl.textContent = formatTime(timerSeconds);
+      setInterval(tickTimer, 1000);
+    }
+
+    function formatTime(secs) {
+      const m = String(Math.floor(secs / 60)).padStart(2, "0");
+      const s = String(secs % 60).padStart(2, "0");
+      return m + ":" + s;
+    }
+
+    document.addEventListener("DOMContentLoaded", init);
+  </script>
+</body>
+</html>

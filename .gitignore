@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.env.local
+.venv/
+.vscode/
+Script/__pycache__/
+
+# Optional: Uncomment to ignore reports and test outputs
+# report.csv
+# test_output/
+
+# User data directory (already has PDFs and will have generated HTMLs)
+# ZYZ\ 1月高频（139篇+29背景）/
