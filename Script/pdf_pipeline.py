@@ -47,6 +47,10 @@ class Question:
     qtype: str = "text"  # mcq | tfng | ynng | gap | text
     options: List[Tuple[str, str]] = field(default_factory=list)
     raw: str = ""
+    # Optional UI helpers (rendered as non-answer group headers).
+    group_title: str = ""
+    group_instruction: str = ""
+    subheading: str = ""
 
     @property
     def html_name(self) -> str:
@@ -96,8 +100,11 @@ def detect_scan(sample_texts: List[str]) -> Tuple[int, float, bool]:
     return char_count, ascii_ratio, suspected_scan
 
 
-def locate_blocks(page_texts: List[str]) -> Tuple[str, str, str, List[str]]:
-    """Locate Passage/Questions/Answers via keyword scanning (with fallback heuristics)."""
+def locate_blocks_with_indices(page_texts: List[str]) -> Tuple[str, str, str, List[str], Optional[int], Optional[int]]:
+    """Locate Passage/Questions/Answers via keyword scanning (with fallback heuristics).
+
+    Returns (passage_text, questions_text, answers_text, notes, q_start, ans_start).
+    """
     question_markers = [
         r"\bQuestions?\s+\d",
         r"\bReading\s+Passage\s+\d",
@@ -118,6 +125,16 @@ def locate_blocks(page_texts: List[str]) -> Tuple[str, str, str, List[str]]:
                 if re.search(pat, text, flags=re.IGNORECASE):
                     return idx
         return None
+
+    def split_at_marker(text: str, patterns: List[str]) -> Tuple[str, str, bool]:
+        best_match = None
+        for pat in patterns:
+            match = re.search(pat, text, flags=re.IGNORECASE)
+            if match and (best_match is None or match.start() < best_match.start()):
+                best_match = match
+        if not best_match:
+            return text.strip(), "", False
+        return text[: best_match.start()].strip(), text[best_match.start():].strip(), True
 
     def question_line_count(text: str) -> int:
         pattern = re.compile(r"(?m)^\s*\d{1,3}\s+[A-Za-z].+")
@@ -170,37 +187,302 @@ def locate_blocks(page_texts: List[str]) -> Tuple[str, str, str, List[str]]:
                 notes.append("Questions marker not found; guessed question section from patterns.")
                 break
 
-    passage_end = q_start if q_start is not None else (ans_start if ans_start is not None else len(page_texts))
-    questions_end = ans_start if ans_start is not None else len(page_texts)
+    passage_text = ""
+    questions_text = ""
+    answers_text = ""
 
-    passage_text = "\n".join(page_texts[:passage_end]).strip()
-    questions_text = "\n".join(page_texts[passage_end:questions_end]).strip()
-    answers_text = "\n".join(page_texts[questions_end:]).strip()
+    if q_start is not None:
+        passage_pages = page_texts[:q_start]
+        before_q, after_q, _ = split_at_marker(page_texts[q_start], question_markers)
+        if before_q:
+            passage_pages.append(before_q)
+        passage_text = "\n".join(passage_pages).strip()
+
+        question_pages: List[str] = []
+        if after_q:
+            question_pages.append(after_q)
+        if ans_start is not None:
+            if ans_start > q_start:
+                question_pages.extend(page_texts[q_start + 1 : ans_start])
+                before_ans, after_ans, _ = split_at_marker(page_texts[ans_start], answer_markers)
+                if before_ans:
+                    question_pages.append(before_ans)
+                answer_pages: List[str] = []
+                if after_ans:
+                    answer_pages.append(after_ans)
+                if ans_start + 1 < len(page_texts):
+                    answer_pages.extend(page_texts[ans_start + 1 :])
+                if answer_pages:
+                    answers_text = "\n".join(answer_pages).strip()
+            elif ans_start == q_start:
+                q_before_ans, q_after_ans, found = split_at_marker(question_pages[0], answer_markers) if question_pages else ("", "", False)
+                if found:
+                    question_pages = [q_before_ans] if q_before_ans else []
+                    answers_text = q_after_ans
+        else:
+            question_pages.extend(page_texts[q_start + 1 :])
+        if question_pages:
+            questions_text = "\n".join(question_pages).strip()
+    elif ans_start is not None:
+        passage_pages = page_texts[:ans_start]
+        before_ans, after_ans, _ = split_at_marker(page_texts[ans_start], answer_markers)
+        if before_ans:
+            passage_pages.append(before_ans)
+        passage_text = "\n".join(passage_pages).strip()
+        answers_text = after_ans
+        if ans_start + 1 < len(page_texts):
+            tail = "\n".join(page_texts[ans_start + 1 :]).strip()
+            answers_text = "\n".join([answers_text, tail]).strip()
+    else:
+        passage_text = "\n".join(page_texts).strip()
+
+    if ans_start is not None and not answers_text:
+        answers_text = "\n".join(page_texts[ans_start:]).strip()
     if q_start is None:
         notes.append("Questions marker not found; treated as contiguous after passage.")
     if ans_start is None:
         notes.append("Answer Key marker not found; answers parsed from tail of document.")
 
+    return passage_text, questions_text, answers_text, notes, q_start, ans_start
+
+
+def locate_blocks(page_texts: List[str]) -> Tuple[str, str, str, List[str]]:
+    passage_text, questions_text, answers_text, notes, _q, _a = locate_blocks_with_indices(page_texts)
     return passage_text, questions_text, answers_text, notes
 
 
 def parse_paragraphs(passage_text: str) -> List[Dict[str, str]]:
-    """Split passage into paragraph units (A/B/C... or synthetic P1...)."""
+    """Split passage into paragraph units (A/B/C... or natural paragraphs)."""
+    if not passage_text.strip():
+        return []
+    
     cleaned = passage_text.replace("\r", "\n")
-    blocks = [b.strip() for b in re.split(r"\n\s*\n", cleaned) if b.strip()]
-    paragraphs = []
-    label_pat = re.compile(r"^(?P<label>[A-Z])[\.\)]\s+")
 
-    current_id = None
-    for block in blocks:
-        label_match = label_pat.match(block)
-        if label_match:
-            current_id = label_match.group("label")
-            body = label_pat.sub("", block, count=1).strip()
+    def join_lines(lines: List[str]) -> str:
+        parts: List[str] = []
+        for line in lines:
+            if not line:
+                continue
+            if parts and parts[-1].endswith("-") and line[0].islower():
+                parts[-1] = parts[-1][:-1] + line
+            else:
+                parts.append(line)
+        return " ".join(parts)
+
+    def merge_by_line_length(lines: List[str]) -> List[str]:
+        if not lines:
+            return []
+        lengths = [len(ln) for ln in lines if len(ln) >= 20]
+        if not lengths:
+            return [join_lines(lines)]
+        lengths.sort()
+        median = lengths[len(lengths) // 2]
+        if median < 40:
+            return [join_lines(lines)]
+        paras: List[str] = []
+        buf: List[str] = []
+        for line in lines:
+            if not buf:
+                buf.append(line)
+                continue
+            prev = buf[-1]
+            prev_len = len(prev)
+            split_here = prev_len < median * 0.6 and re.search(r"[\.?!]$", prev)
+            if split_here:
+                paras.append(join_lines(buf))
+                buf = [line]
+            else:
+                buf.append(line)
+        if buf:
+            paras.append(join_lines(buf))
+        return paras
+    
+    # Check for explicit paragraph labels (A, B, C, etc.)
+    label_pat = re.compile(r"^(?P<label>[A-Z])[\.\)]\s+", re.MULTILINE)
+    explicit_labels = label_pat.findall(cleaned)
+    
+    if len(explicit_labels) >= 3:
+        # Use explicit labels
+        blocks = [b.strip() for b in re.split(r"\n\s*\n", cleaned) if b.strip()]
+        paragraphs = []
+        for block in blocks:
+            label_match = label_pat.match(block)
+            if label_match:
+                current_id = label_match.group("label")
+                body = label_pat.sub("", block, count=1).strip()
+            else:
+                current_id = f"P{len(paragraphs) + 1}"
+                body = block
+            body_lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+            body_text = join_lines(body_lines)
+            if body_text:
+                paragraphs.append({"id": current_id, "text": body_text})
+    else:
+        # No explicit labels - split into natural paragraphs
+        cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+        raw_blocks = [b.strip() for b in re.split(r"\n\s*\n", cleaned) if b.strip()]
+        if len(raw_blocks) >= 2:
+            blocks = [join_lines([ln.strip() for ln in blk.splitlines() if ln.strip()]) for blk in raw_blocks]
         else:
-            current_id = f"P{len(paragraphs) + 1}"
-            body = block
-        paragraphs.append({"id": current_id, "text": body})
+            lines = [ln.strip() for ln in cleaned.splitlines() if ln.strip()]
+            blocks = merge_by_line_length(lines)
+        paragraphs = []
+        for block in blocks:
+            if not block:
+                continue
+            if re.match(r"^(READING PASSAGE|Questions?|You should spend|Passage \d|Answer)", block, re.IGNORECASE):
+                continue
+            if len(block) < 15 and not re.search(r"[\.?!:]$", block):
+                continue
+            paragraphs.append({"id": "", "text": block})
+    
+    return paragraphs
+
+
+def parse_paragraphs_from_pdf(pdf_path: Path, end_page: int) -> List[Dict[str, str]]:
+    """Layout-based paragraph extraction using pdfplumber word positions.
+
+    This is much closer to the visual PDF paragraphing than text-only heuristics.
+    """
+    if not pdfplumber:
+        return []
+    paragraphs: List[Dict[str, str]] = []
+    skip_re = re.compile(
+        r"^(READING PASSAGE|You should spend about|Passage \d+ below)\b",
+        flags=re.IGNORECASE,
+    )
+
+    def group_lines(words: List[dict], y_tol: float = 3.0) -> List[dict]:
+        if not words:
+            return []
+        words_sorted = sorted(words, key=lambda w: (w.get("top", 0.0), w.get("x0", 0.0)))
+        lines: List[List[dict]] = []
+        cur: List[dict] = []
+        cur_top: Optional[float] = None
+        for w in words_sorted:
+            top = float(w.get("top", 0.0))
+            if cur_top is None or abs(top - cur_top) <= y_tol:
+                cur.append(w)
+                cur_top = top if cur_top is None else min(cur_top, top)
+            else:
+                lines.append(cur)
+                cur = [w]
+                cur_top = top
+        if cur:
+            lines.append(cur)
+
+        out: List[dict] = []
+        for ws in lines:
+            ws = sorted(ws, key=lambda w: float(w.get("x0", 0.0)))
+            text = " ".join(str(w.get("text", "")).strip() for w in ws if str(w.get("text", "")).strip())
+            if not text:
+                continue
+            out.append(
+                {
+                    "text": text,
+                    "x0": float(min(w.get("x0", 0.0) for w in ws)),
+                    "top": float(min(w.get("top", 0.0) for w in ws)),
+                    "bottom": float(max(w.get("bottom", 0.0) for w in ws)),
+                }
+            )
+        return out
+
+    def median(vals: List[float]) -> float:
+        if not vals:
+            return 0.0
+        vals = sorted(vals)
+        return vals[len(vals) // 2]
+
+    buf: List[str] = []
+    current_pid = ""
+    label_pat = re.compile(r"^(?P<label>[A-Z])[\.\)]\s+")
+    # Some PDFs label paragraphs as "A " (no punctuation) and labels are typically A-H.
+    label_pat2 = re.compile(r"^(?P<label>[A-H])\s+(?=[A-Z])")
+    last_line = None
+    with pdfplumber.open(pdf_path) as pdf:
+        pages = pdf.pages[: max(0, min(end_page, len(pdf.pages)))]
+        for page in pages:
+            lines = group_lines(page.extract_words(use_text_flow=True, keep_blank_chars=False) or [])
+            if not lines:
+                continue
+            # Typical line length helps detect "single-sentence" paragraphs with no extra vertical gap.
+            line_lens = [
+                len(ln["text"])
+                for ln in lines
+                if ln.get("text")
+                and 30 <= len(ln["text"]) <= 140
+                and not skip_re.match(str(ln["text"]))
+            ]
+            med_len = median([float(x) for x in line_lens]) if line_lens else 0.0
+            gaps: List[float] = []
+            for i in range(len(lines) - 1):
+                g = float(lines[i + 1]["top"]) - float(lines[i]["bottom"])
+                if g > 0:
+                    gaps.append(g)
+            base_gap = median(gaps) or 8.0
+            break_gap = max(base_gap * 1.6, base_gap + 6.0)
+
+            for i, ln in enumerate(lines):
+                text = ln["text"].strip()
+                if not text:
+                    continue
+                if skip_re.match(text):
+                    continue
+                # Skip the small header line that repeats across PDFs.
+                if text.lower().startswith("questions ") and "–" in text:
+                    continue
+
+                # Detect explicit paragraph labels (A., B), etc. If encountered, start a new paragraph.
+                # Handle "A" alone on a line (common in IELTS paragraph-labeled passages).
+                prev_gap = None
+                if i > 0:
+                    prev_gap = float(ln["top"]) - float(lines[i - 1]["bottom"])
+                if len(text) == 1 and text in "ABCDEFGH" and (not buf or (prev_gap is not None and prev_gap > break_gap)):
+                    if buf:
+                        joined = " ".join(buf).strip()
+                        if joined:
+                            paragraphs.append({"id": current_pid, "text": joined})
+                        buf = []
+                        current_pid = ""
+                    current_pid = text
+                    continue
+
+                m = (label_pat.match(text) or label_pat2.match(text)) if (not buf or (prev_gap is not None and prev_gap > break_gap)) else None
+                if m:
+                    if buf:
+                        joined = " ".join(buf).strip()
+                        if joined:
+                            paragraphs.append({"id": current_pid, "text": joined})
+                        buf = []
+                        current_pid = ""
+                    current_pid = m.group("label")
+                    text = (label_pat.sub("", text, count=1) if label_pat.match(text) else label_pat2.sub("", text, count=1)).strip()
+                    if not text:
+                        continue
+                buf.append(text)
+
+                gap_next = None
+                if i + 1 < len(lines):
+                    gap_next = float(lines[i + 1]["top"]) - float(ln["bottom"])
+                end_para = gap_next is None or gap_next > break_gap
+                if not end_para and gap_next is not None and i + 1 < len(lines):
+                    next_text = str(lines[i + 1].get("text", "")).strip()
+                    is_short = med_len > 0 and len(text) < (med_len * 0.65)
+                    ends_sentence = bool(re.search(r"[\.?!]$", text))
+                    starts_cap = bool(next_text[:1].isupper())
+                    if is_short and ends_sentence and starts_cap:
+                        end_para = True
+                if end_para:
+                    joined = " ".join(buf).strip()
+                    if joined:
+                        paragraphs.append({"id": current_pid, "text": joined})
+                    buf = []
+                    current_pid = ""
+
+    if buf:
+        joined = " ".join(buf).strip()
+        if joined:
+            paragraphs.append({"id": current_pid, "text": joined})
     return paragraphs
 
 
@@ -212,9 +494,11 @@ def _option_lines(lines: List[str]) -> List[Tuple[str, str]]:
         return match.group(1).strip(), match.group(2).strip()
 
     def split_inline(line: str) -> List[Tuple[str, str]]:
+        # Only treat as inline if there are multiple options clearly separated
         pat = re.compile(r"(?:(?<=^)|(?<=\s))\(?([A-L]|[ivxlcdm]+)\)?[\.\)]?\s+", flags=re.IGNORECASE)
         matches = list(pat.finditer(line))
-        if len(matches) < 2:
+        # Require at least 3 matches for inline (otherwise it might be a normal option with sub-parts)
+        if len(matches) < 3:
             return []
         items: List[Tuple[str, str]] = []
         for idx, match in enumerate(matches):
@@ -228,22 +512,53 @@ def _option_lines(lines: List[str]) -> List[Tuple[str, str]]:
 
     opts: List[Tuple[str, str]] = []
     seen = set()
+    current_label = None
+    current_text_parts = []
+    
     for ln in lines:
+        # Check if this is an inline format (multiple options in one line)
         inline_opts = split_inline(ln)
         if inline_opts:
+            # Finish any pending option
+            if current_label and current_text_parts:
+                key = current_label.upper()
+                if key not in seen:
+                    opts.append((current_label, " ".join(current_text_parts)))
+                    seen.add(key)
+                current_label = None
+                current_text_parts = []
+            # Add inline options
             for label, text in inline_opts:
                 key = label.upper()
                 if key not in seen:
                     opts.append((label, text))
                     seen.add(key)
             continue
+        
+        # Check if this line starts a new option
         matched = line_match(ln)
         if matched:
+            # Finish any pending option
+            if current_label and current_text_parts:
+                key = current_label.upper()
+                if key not in seen:
+                    opts.append((current_label, " ".join(current_text_parts)))
+                    seen.add(key)
+            # Start new option
             label, text = matched
-            key = label.upper()
-            if key not in seen:
-                opts.append((label, text))
-                seen.add(key)
+            current_label = label
+            current_text_parts = [text] if text else []
+        elif current_label and ln.strip():
+            # Continue the current option text (multi-line option)
+            current_text_parts.append(ln.strip())
+    
+    # Finish the last option
+    if current_label and current_text_parts:
+        key = current_label.upper()
+        if key not in seen:
+            opts.append((current_label, " ".join(current_text_parts)))
+            seen.add(key)
+    
     return opts
 
 
@@ -355,6 +670,81 @@ def _detect_section_qtype(text: str) -> Optional[str]:
     return None
 
 
+def _format_range_title(start: int, end: int) -> str:
+    # Use an en dash to match IELTS PDFs.
+    return f"Questions {start}\u2013{end}"
+
+
+def _extract_group_header(section: str, start: int, end: int) -> Tuple[str, str, str]:
+    """Return (group_title, group_instruction, body_text).
+
+    The 'body_text' begins at the first numbered question line (e.g. '27 ...').
+    """
+    first_q = re.search(r"(?m)^\s*\d{1,3}[\.\)]?\s+", section)
+    if not first_q:
+        return _format_range_title(start, end), "", section.strip()
+
+    header = section[: first_q.start()].strip()
+    body = section[first_q.start() :].strip()
+
+    if not header:
+        return _format_range_title(start, end), "", body
+
+    # Preserve line breaks for readability.
+    instr_lines: List[str] = []
+    for ln in [x.strip() for x in header.splitlines() if x.strip()]:
+        # Strip the leading "Questions X–Y" if it is on the same line.
+        ln2 = re.sub(
+            r"(?i)^Questions?\s+\d{1,3}\s*[–-]\s*\d{1,3}\s*",
+            "",
+            ln,
+        ).strip()
+        if ln2:
+            instr_lines.append(ln2)
+    return _format_range_title(start, end), "\n".join(instr_lines).strip(), body
+
+
+def _split_summary_stem(stem: str, start: int, end: int) -> Tuple[str, str, str]:
+    """Split summary stem into (instruction, summary_title, summary_body)."""
+    text = re.sub(
+        rf"(?i)^Questions?\s+{start}\s*[–-]\s*{end}\s*",
+        "",
+        stem.strip(),
+    ).strip()
+
+    instruction = ""
+    rest = text
+
+    # Usually: "... on your answer sheet." then the boxed summary title/body starts.
+    m = re.search(r"(?i)answer\s+sheet\.?", rest)
+    if m:
+        # End instruction at the end of this sentence if possible.
+        dot = rest.find(".", m.start())
+        cut = dot + 1 if dot != -1 else m.end()
+        instruction = rest[:cut].strip()
+        rest = rest[cut:].strip()
+    else:
+        # Fallback: end instruction at the second sentence.
+        parts = re.split(r"(?<=[.!?])\s+", rest, maxsplit=2)
+        if len(parts) >= 2 and len(parts[0]) <= 160:
+            instruction = (parts[0] + " " + parts[1]).strip()
+            rest = rest[len(instruction) :].strip()
+
+    summary_title = ""
+    summary_body = rest.strip()
+
+    # Many summaries start with a boxed title, then "In ..." / "The ..." body.
+    if summary_body:
+        m2 = re.search(r"\s+(?=(In|On|At|The|A|An)\s)", summary_body)
+        if m2 and m2.start() <= 90:
+            maybe_title = summary_body[: m2.start()].strip()
+            if 5 <= len(maybe_title) <= 80 and not re.search(r"[.!?:;]$", maybe_title):
+                summary_title = maybe_title
+                summary_body = summary_body[m2.start() :].strip()
+
+    return instruction, summary_title, summary_body
+
+
 def parse_questions(question_text: str) -> List[Question]:
     """Parse questions into a structured list with light type detection."""
     question_text = _strip_tail_notice(question_text)
@@ -383,15 +773,43 @@ def parse_questions(question_text: str) -> List[Question]:
         end = headings[idx + 1].start() if idx + 1 < len(headings) else len(question_text)
         section = question_text[start:end]
         section_lower = section.lower()
+        range_info = _extract_range(section)
         if any(hint in section_lower for hint in summary_hints):
             summary_q = _parse_summary_section(section)
             if summary_q:
+                if range_info:
+                    s, e = range_info
+                    summary_q.group_title = _format_range_title(s, e)
+                    instr, title, body = _split_summary_stem(summary_q.stem, s, e)
+                    summary_q.group_instruction = instr
+                    summary_q.subheading = title
+                    if body:
+                        summary_q.stem = body
                 questions.append(summary_q)
             else:
-                questions.extend(_parse_numbered_questions(section))
+                # Fall back to numbered parsing, keeping any header text as group instruction if possible.
+                if range_info:
+                    s, e = range_info
+                    gtitle, ginstr, body = _extract_group_header(section, s, e)
+                    parsed = _parse_numbered_questions(body)
+                    if parsed:
+                        parsed[0].group_title = gtitle
+                        parsed[0].group_instruction = ginstr
+                    questions.extend(parsed)
+                else:
+                    questions.extend(_parse_numbered_questions(section))
         else:
             default_qtype = _detect_section_qtype(section)
-            questions.extend(_parse_numbered_questions(section, default_qtype=default_qtype))
+            if range_info:
+                s, e = range_info
+                gtitle, ginstr, body = _extract_group_header(section, s, e)
+                parsed = _parse_numbered_questions(body, default_qtype=default_qtype)
+                if parsed:
+                    parsed[0].group_title = gtitle
+                    parsed[0].group_instruction = ginstr
+                questions.extend(parsed)
+            else:
+                questions.extend(_parse_numbered_questions(section, default_qtype=default_qtype))
     return questions
 
 
@@ -472,11 +890,22 @@ def validate(questions: List[Question], answers: Dict[str, str], suspected_scan:
 
 def build_passage_html(paragraphs: List[Dict[str, str]]) -> str:
     parts = []
-    for para in paragraphs:
-        pid = html.escape(str(para.get("id", "")))
+    for idx, para in enumerate(paragraphs):
+        pid = str(para.get("id", "")).strip()
         text = html.escape(para.get("text", ""))
-        label = f'<span class="paragraph-label">{pid}</span> ' if pid else ""
-        parts.append(f'<p id="para-{pid}">{label}{text}</p>')
+        raw = (para.get("text") or "").strip()
+        if pid:
+            # Has explicit label (A, B, C, etc.)
+            label = f'<span class="paragraph-label">{html.escape(pid)}</span> '
+            parts.append(f'<p id="para-{html.escape(pid)}">{label}{text}</p>')
+        else:
+            if idx == 0:
+                punct_count = len(re.findall(r"[.!?]", raw))
+                if raw and len(raw) <= 80 and punct_count <= 1:
+                    parts.append(f'<h3 class="passage-title">{html.escape(raw)}</h3>')
+                    continue
+            # Natural paragraph without label
+            parts.append(f'<p>{text}</p>')
     return "\n".join(parts)
 
 
@@ -490,6 +919,15 @@ def build_question_nav(questions: List[Question]) -> str:
 def build_question_html(questions: List[Question]) -> str:
     items = []
     for q in questions:
+        if q.group_title or q.group_instruction:
+            title = html.escape(q.group_title or "")
+            instr = html.escape(q.group_instruction or "").replace("\n", "<br>")
+            items.append(
+                f"""<div class="group-header">
+  <div class="group-title">{title}</div>
+  <div class="group-instruction">{instr}</div>
+</div>"""
+            )
         stem_html = html.escape(q.stem or "").replace("\n", "<br>")
         controls = ""
         if q.qtype == "summary":
@@ -500,12 +938,14 @@ def build_question_html(questions: List[Question]) -> str:
                 anchors = ""
             placeholder_map = {}
             stem_src = q.stem or ""
+            missing: List[str] = []
             for num in range_numbers:
                 placeholder = f"__BLANK_{num}__"
                 placeholder_map[num] = placeholder
                 replaced = False
                 patterns = [
-                    re.compile(rf"\b{num}\b\s*_{2,}"),
+                    # Avoid word-boundary pitfalls like "31____" where '_' counts as a word char.
+                    re.compile(rf"(?<!\d){num}(?!\d)\s*[_＿]{{2,}}"),
                     re.compile(r"[\(\[]\s*" + re.escape(str(num)) + r"\s*[\)\]]"),
                 ]
                 for pattern in patterns:
@@ -514,25 +954,38 @@ def build_question_html(questions: List[Question]) -> str:
                         replaced = True
                         break
                 if not replaced:
-                    stem_src += f" {placeholder}"
+                    missing.append(num)
+            for num in missing:
+                stem_src += f" {placeholder_map[num]}"
             stem_safe = html.escape(stem_src)
             options_html = ""
             if q.options:
-                choices = "".join(
-                    f'<option value="{html.escape(label.upper())}">{html.escape(label.upper())}</option>'
-                    for label, _ in q.options
-                )
+                # Create dropzones for drag-and-drop
                 for num in range_numbers:
-                    select_html = (
-                        f'<select class="select-input" name="q{num}">'
-                        f'<option value="">--</option>{choices}</select>'
-                    )
-                    stem_safe = stem_safe.replace(placeholder_map[num], f"{num} {select_html}")
-                option_pills = "".join(
-                    f'<span class="option-pill"><strong>{html.escape(label.upper())}</strong> {html.escape(text)}</span>'
+                    dropzone_html = f'{num} <span class="dropzone" data-target="q{num}"></span>'
+                    stem_safe = stem_safe.replace(placeholder_map[num], dropzone_html)
+                    # Extra safety: if a blank is still present as "31 ____", replace it inline.
+                    if placeholder_map[num] not in stem_safe:
+                        stem_safe = re.sub(
+                            rf"(?<!\d){num}(?!\d)\s*[_＿]{{2,}}",
+                            dropzone_html,
+                            stem_safe,
+                            count=1,
+                        )
+                
+                # Create draggable cards
+                cards = "".join(
+                    f'<div class="card" draggable="true" data-value="{html.escape(label.upper())}" id="card-{html.escape(label.upper())}">{html.escape(label.upper())} {html.escape(text)}</div>'
                     for label, text in q.options
                 )
-                options_html = f'<div class="option-grid">{option_pills}</div>'
+                options_html = f'<div class="option-pool" id="pool-{q.number}">{cards}</div>'
+                
+                # Add hidden inputs for grading
+                hidden_inputs = "".join(
+                    f'<input type="hidden" name="q{num}" value="" />'
+                    for num in range_numbers
+                )
+                options_html += hidden_inputs
             else:
                 for num in range_numbers:
                     input_html = f'<input type="text" name="q{num}" class="text-input inline-input" />'
@@ -541,6 +994,7 @@ def build_question_html(questions: List[Question]) -> str:
                 f"""<article class="question" id="q{range_numbers[0] if range_numbers else q.number}">
   {anchors}
   <div class="q-header"><span class="q-number">{q.number}</span><div class="q-meta">SUMMARY</div></div>
+  {f'<div class=\"q-subheading\">{html.escape(q.subheading)}</div>' if q.subheading else ''}
   <div class="q-stem">{stem_safe}</div>
   {options_html}
 </article>"""
@@ -593,9 +1047,14 @@ def process_pdf(pdf_path: Path, args: argparse.Namespace) -> ParseOutcome:
     all_texts, total_pages = extract_pages_text(pdf_path, max_pages=None)
     sample_texts = all_texts[: min(2, len(all_texts))]
     char_count, ascii_ratio, suspected_scan = detect_scan(sample_texts)
-    passage_text, questions_text, answers_text, notes = locate_blocks(all_texts)
+    passage_text, questions_text, answers_text, notes, q_start, _ans_start = locate_blocks_with_indices(all_texts)
 
-    paragraphs = parse_paragraphs(passage_text)
+    paragraphs = []
+    if pdfplumber and q_start and q_start > 0:
+        # Use layout-based paragraph extraction for the passage pages when possible.
+        paragraphs = parse_paragraphs_from_pdf(pdf_path, end_page=q_start)
+    if not paragraphs:
+        paragraphs = parse_paragraphs(passage_text)
     questions = parse_questions(questions_text)
     if not questions:
         full_text = "\n".join(all_texts)
@@ -636,6 +1095,23 @@ def process_pdf(pdf_path: Path, args: argparse.Namespace) -> ParseOutcome:
         title = pdf_path.stem
         question_numbers = expand_question_numbers(questions)
         filtered_answers = {f"q{num}": answers.get(f"q{num}", "") for num in question_numbers}
+        if not any(v for v in filtered_answers.values()):
+            # Sidecar override: allow manual answer keys without re-parsing the PDF.
+            # Search order: output html sidecar -> input pdf sidecar.
+            sidecars = [
+                (out_dir / f"{pdf_path.stem}.answers.json"),
+                (pdf_path.with_suffix(".answers.json")),
+            ]
+            for sc in sidecars:
+                if sc.exists():
+                    try:
+                        loaded = json.loads(sc.read_text(encoding="utf-8"))
+                        if isinstance(loaded, dict):
+                            for k, v in loaded.items():
+                                if k in filtered_answers and v:
+                                    filtered_answers[k] = str(v)
+                    except Exception:
+                        pass
         meta_rows = []
         for q in questions:
             for num in _expand_number_string(q.number):

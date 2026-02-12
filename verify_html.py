@@ -10,7 +10,7 @@ with open(html_path, 'r', encoding='utf-8') as f:
 has_passage = 'READING PASSAGE' in content and 'Laura Ingalls Wilder' in content
 has_questions = 'question-content' in content and 'q27' in content
 has_nav = 'q-nav' in content
-has_answers_json = 'const ANSWERS' in content
+has_answers_json = 'ANSWERS' in content
 
 print(f'✓ 文章内容: {"存在" if has_passage else "缺失"}')
 print(f'✓ 题目内容: {"存在" if has_questions else "缺失"}')

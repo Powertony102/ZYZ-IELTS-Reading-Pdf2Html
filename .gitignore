@@ -6,6 +6,7 @@ __pycache__/
 .venv/
 .vscode/
 Script/__pycache__/
+*.state.json
 
 # Optional: Uncomment to ignore reports and test outputs
 # report.csv
