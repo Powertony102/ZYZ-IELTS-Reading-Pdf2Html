@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import posixpath
 import re
 import sqlite3
 import urllib.parse
@@ -66,6 +67,37 @@ def band_display(band: float) -> str:
     if band == int(band):
         return f"{int(band)}.0"
     return str(band)
+
+
+# ---------------------------------------------------------------------------
+# Per-page state persistence (practice HTML save/load)
+# ---------------------------------------------------------------------------
+def _safe_resolve(root: Path, url_path: str) -> Optional[Path]:
+    """Resolve a URL path to a file under root, preventing traversal."""
+    raw = urllib.parse.unquote(url_path)
+    raw = raw.split("?", 1)[0].split("#", 1)[0]
+    raw = posixpath.normpath(raw)
+    raw = raw.lstrip("/")
+    if raw.startswith(".."):
+        return None
+    cand = (root / raw).resolve()
+    try:
+        cand.relative_to(root.resolve())
+    except Exception:
+        return None
+    return cand
+
+
+def _state_path_for_doc(doc_path: Path) -> Path:
+    """Sidecar state path: foo.html -> foo.state.json."""
+    if doc_path.suffix.lower() == ".html":
+        return doc_path.with_suffix(".state.json")
+    return doc_path.with_suffix(doc_path.suffix + ".state.json")
+
+
+def _answers_path_for_doc(doc_path: Path) -> Path:
+    """Sidecar answers path: foo.html -> foo.answers.json."""
+    return doc_path.with_suffix(".answers.json")
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +392,19 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         params = {k: v[0] if len(v) == 1 else v for k, v in qs.items()}
         return parsed.path, params
 
+    def _resolve_doc(self) -> Tuple[Optional[Path], Optional[Path], Optional[str]]:
+        """Resolve the HTML document referred to by the ?doc query parameter."""
+        root = Path(self.directory or os.getcwd()).resolve()
+        parsed = urllib.parse.urlparse(self.path)
+        qs = urllib.parse.parse_qs(parsed.query or "")
+        doc = (qs.get("doc") or [None])[0]
+        if not doc:
+            return None, None, "Missing 'doc' query parameter."
+        doc_path = _safe_resolve(root, doc)
+        if not doc_path:
+            return None, None, "Invalid doc path."
+        return doc_path, _state_path_for_doc(doc_path), None
+
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -381,6 +426,31 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if path == "/api/stats":
             stats = self.db.get_stats()
             return self._send_json(200, stats)
+
+        if path.startswith("/api/state"):
+            doc_path, state_path, err = self._resolve_doc()
+            if err:
+                return self._send_json(400, {"ok": False, "error": err})
+            if not state_path.exists():
+                return self._send_json(404, {"ok": False, "error": "No state file.", "state": None})
+            try:
+                state = json.loads(state_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                return self._send_json(500, {"ok": False, "error": f"Bad state JSON: {exc}"})
+            return self._send_json(200, {"ok": True, "state": state})
+
+        if path.startswith("/api/answers"):
+            doc_path, _state_path, err = self._resolve_doc()
+            if err:
+                return self._send_json(400, {"ok": False, "error": err})
+            answers_path = _answers_path_for_doc(doc_path)
+            if not answers_path.exists():
+                return self._send_json(404, {"ok": False, "error": "No answers file.", "answers": None})
+            try:
+                answers = json.loads(answers_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                return self._send_json(500, {"ok": False, "error": f"Bad answers JSON: {exc}"})
+            return self._send_json(200, {"ok": True, "answers": answers})
 
         # Serve static files
         return super().do_GET()
@@ -408,6 +478,21 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 return self._send_json(200, {"ok": True})
             return self._send_json(404, {"error": "Record not found"})
 
+        if path.startswith("/api/state"):
+            doc_path, state_path, err = self._resolve_doc()
+            if err:
+                return self._send_json(400, {"ok": False, "error": err})
+            try:
+                body = self._read_body()
+                state = json.loads(body.decode("utf-8") or "{}")
+            except Exception as exc:
+                return self._send_json(400, {"ok": False, "error": f"Invalid JSON: {exc}"})
+            try:
+                state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception as exc:
+                return self._send_json(500, {"ok": False, "error": f"Write failed: {exc}"})
+            return self._send_json(200, {"ok": True, "path": str(state_path)})
+
         return self._send_json(404, {"error": "Unknown endpoint"})
 
     def do_DELETE(self):
@@ -421,6 +506,17 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             if success:
                 return self._send_json(200, {"ok": True})
             return self._send_json(404, {"error": "Record not found"})
+
+        if path.startswith("/api/state"):
+            doc_path, state_path, err = self._resolve_doc()
+            if err:
+                return self._send_json(400, {"ok": False, "error": err})
+            try:
+                if state_path.exists():
+                    state_path.unlink()
+            except Exception as exc:
+                return self._send_json(500, {"ok": False, "error": f"Delete failed: {exc}"})
+            return self._send_json(200, {"ok": True})
 
         return self._send_json(404, {"error": "Unknown endpoint"})
 
