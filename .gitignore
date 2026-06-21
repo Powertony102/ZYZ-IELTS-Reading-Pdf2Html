@@ -16,3 +16,11 @@ tmp_codex_check/
 
 # User data directory (already has PDFs and will have generated HTMLs)
 # ZYZ\ 1月高频（139篇+29背景）/
+
+# Build output
+server_build/
+
+# Dashboard database
+dashboard/*.db
+dashboard/*.db-shm
+dashboard/*.db-wal

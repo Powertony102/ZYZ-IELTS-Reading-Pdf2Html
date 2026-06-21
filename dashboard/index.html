@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IELTS Reading Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            border: 'hsl(240 3.7% 15.9%)',
+            input: 'hsl(240 3.7% 15.9%)',
+            ring: 'hsl(240 4.9% 83.9%)',
+            background: 'hsl(240 10% 3.9%)',
+            foreground: 'hsl(0 0% 98%)',
+            primary: { DEFAULT: 'hsl(0 0% 98%)', foreground: 'hsl(240 5.9% 10%)' },
+            secondary: { DEFAULT: 'hsl(240 3.7% 15.9%)', foreground: 'hsl(0 0% 98%)' },
+            destructive: { DEFAULT: 'hsl(0 62.8% 30.6%)', foreground: 'hsl(0 0% 98%)' },
+            muted: { DEFAULT: 'hsl(240 3.7% 15.9%)', foreground: 'hsl(240 5% 64.9%)' },
+            accent: { DEFAULT: 'hsl(240 3.7% 15.9%)', foreground: 'hsl(0 0% 98%)' },
+            card: { DEFAULT: 'hsl(240 10% 3.9%)', foreground: 'hsl(0 0% 98%)' },
+          },
+          borderRadius: { lg: '0.5rem', md: 'calc(0.5rem - 2px)', sm: 'calc(0.5rem - 4px)' },
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: hsl(240 3.7% 20%); border-radius: 3px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: hsl(240 3.7% 30%); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.2s ease-out; }
+    .toast { animation: fadeIn 0.3s ease-out, fadeOut 0.3s ease-in 2.7s forwards; }
+    @keyframes fadeOut { to { opacity: 0; transform: translateY(-8px); } }
+  </style>
+</head>
+<body class="bg-background text-foreground min-h-screen">
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2"></div>
+
+  <!-- Edit Modal -->
+  <div id="edit-modal" class="fixed inset-0 z-40 hidden">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md">
+      <div class="bg-[hsl(240_10%_6%)] border border-border rounded-xl shadow-2xl p-6 fade-in">
+        <h3 class="text-lg font-semibold mb-4" id="modal-title">编辑做题记录</h3>
+        <div class="space-y-4">
+          <div>
+            <label class="text-sm font-medium text-muted-foreground mb-1.5 block">做题状态</label>
+            <select id="modal-status" class="w-full h-10 px-3 rounded-md bg-secondary border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring">
+              <option value="not_started">未开始</option>
+              <option value="in_progress">进行中</option>
+              <option value="completed">已完成</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-sm font-medium text-muted-foreground mb-1.5 block">用时（秒）</label>
+            <div class="flex gap-2">
+              <input id="modal-minutes" type="number" min="0" max="999" placeholder="分" class="w-1/2 h-10 px-3 rounded-md bg-secondary border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input id="modal-seconds" type="number" min="0" max="59" placeholder="秒" class="w-1/2 h-10 px-3 rounded-md bg-secondary border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+            </div>
+          </div>
+          <div>
+            <label class="text-sm font-medium text-muted-foreground mb-1.5 block">得分</label>
+            <div class="flex gap-2 items-center">
+              <input id="modal-raw" type="number" min="0" max="99" placeholder="正确数" class="w-1/3 h-10 px-3 rounded-md bg-secondary border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              <span class="text-muted-foreground">/</span>
+              <input id="modal-total" type="number" min="1" max="99" placeholder="总题数" class="w-1/3 h-10 px-3 rounded-md bg-secondary border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              <span id="modal-band" class="text-sm font-mono text-emerald-400 ml-2">→ --</span>
+            </div>
+          </div>
+          <input type="hidden" id="modal-record-id" />
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+          <button onclick="closeModal()" class="px-4 py-2 text-sm rounded-md border border-border hover:bg-accent transition-colors">取消</button>
+          <button onclick="saveModal()" class="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity font-medium">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    <!-- Header -->
+    <header class="mb-8">
+      <div class="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 class="text-3xl font-extrabold tracking-tight flex items-center gap-3">
+            <span class="text-2xl">📖</span> IELTS Reading 练习导航
+          </h1>
+          <p class="text-muted-foreground mt-1 text-sm">点击题目名称进入练习页面，完成后记录分数</p>
+        </div>
+        <button onclick="toggleTheme()" class="h-9 px-3 rounded-md border border-border text-sm hover:bg-accent transition-colors flex items-center gap-2">
+          <span id="theme-icon">🌙</span> <span id="theme-text">暗色</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8" id="stats-grid">
+      <div class="bg-card border border-border rounded-xl p-4">
+        <div class="text-muted-foreground text-xs font-medium uppercase tracking-wider">总题数</div>
+        <div class="text-2xl font-bold mt-1" id="stat-total">--</div>
+      </div>
+      <div class="bg-card border border-border rounded-xl p-4">
+        <div class="text-muted-foreground text-xs font-medium uppercase tracking-wider">已完成</div>
+        <div class="text-2xl font-bold mt-1 text-emerald-400" id="stat-completed">--</div>
+      </div>
+      <div class="bg-card border border-border rounded-xl p-4">
+        <div class="text-muted-foreground text-xs font-medium uppercase tracking-wider">进行中</div>
+        <div class="text-2xl font-bold mt-1 text-amber-400" id="stat-progress">--</div>
+      </div>
+      <div class="bg-card border border-border rounded-xl p-4">
+        <div class="text-muted-foreground text-xs font-medium uppercase tracking-wider">平均分数</div>
+        <div class="text-2xl font-bold mt-1 text-blue-400" id="stat-avg-band">--</div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex flex-wrap items-center gap-3 mb-6">
+      <!-- Search -->
+      <div class="relative flex-1 min-w-[200px] max-w-md">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input id="search-input" type="text" placeholder="搜索题目名称..." class="w-full h-9 pl-9 pr-3 rounded-md bg-secondary border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground" />
+      </div>
+
+      <!-- Passage Type Filter -->
+      <div class="flex rounded-md border border-border overflow-hidden">
+        <button data-filter="type" data-value="all" class="filter-btn active h-9 px-3 text-sm font-medium border-r border-border hover:bg-accent transition-colors">全部</button>
+        <button data-filter="type" data-value="P1" class="filter-btn h-9 px-3 text-sm font-medium border-r border-border hover:bg-accent transition-colors">P1</button>
+        <button data-filter="type" data-value="P2" class="filter-btn h-9 px-3 text-sm font-medium border-r border-border hover:bg-accent transition-colors">P2</button>
+        <button data-filter="type" data-value="P3" class="filter-btn h-9 px-3 text-sm font-medium hover:bg-accent transition-colors">P3</button>
+      </div>
+
+      <!-- Frequency Filter -->
+      <div class="flex rounded-md border border-border overflow-hidden">
+        <button data-filter="freq" data-value="all" class="filter-btn active h-9 px-3 text-sm font-medium border-r border-border hover:bg-accent transition-colors">全部</button>
+        <button data-filter="freq" data-value="高频" class="filter-btn h-9 px-3 text-sm font-medium border-r border-border hover:bg-accent transition-colors">高频</button>
+        <button data-filter="freq" data-value="次高频" class="filter-btn h-9 px-3 text-sm font-medium hover:bg-accent transition-colors">次高频</button>
+      </div>
+
+      <!-- Status Filter -->
+      <div class="flex rounded-md border border-border overflow-hidden">
+        <button data-filter="status" data-value="all" class="filter-btn active h-9 px-3 text-sm font-medium border-r border-border hover:bg-accent transition-colors">全部</button>
+        <button data-filter="status" data-value="not_started" class="filter-btn h-9 px-3 text-sm font-medium border-r border-border hover:bg-accent transition-colors">未开始</button>
+        <button data-filter="status" data-value="in_progress" class="filter-btn h-9 px-3 text-sm font-medium border-r border-border hover:bg-accent transition-colors">进行中</button>
+        <button data-filter="status" data-value="completed" class="filter-btn h-9 px-3 text-sm font-medium hover:bg-accent transition-colors">已完成</button>
+      </div>
+    </div>
+
+    <!-- Results Count -->
+    <div class="text-sm text-muted-foreground mb-3">
+      显示 <span id="results-count" class="font-medium text-foreground">0</span> 道题目
+    </div>
+
+    <!-- Table -->
+    <div class="bg-card border border-border rounded-xl overflow-hidden">
+      <div class="overflow-x-auto scrollbar-thin">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-border bg-secondary/50">
+              <th class="text-left py-3 px-4 font-semibold text-muted-foreground w-12">#</th>
+              <th class="text-left py-3 px-4 font-semibold text-muted-foreground">题目名称</th>
+              <th class="text-center py-3 px-3 font-semibold text-muted-foreground w-16">类型</th>
+              <th class="text-center py-3 px-3 font-semibold text-muted-foreground w-20">频率</th>
+              <th class="text-center py-3 px-3 font-semibold text-muted-foreground w-20">状态</th>
+              <th class="text-center py-3 px-3 font-semibold text-muted-foreground w-24">用时</th>
+              <th class="text-center py-3 px-3 font-semibold text-muted-foreground w-28">分数</th>
+              <th class="text-center py-3 px-4 font-semibold text-muted-foreground w-20">操作</th>
+            </tr>
+          </thead>
+          <tbody id="test-table-body">
+            <tr>
+              <td colspan="8" class="text-center py-12 text-muted-foreground">
+                <div class="flex flex-col items-center gap-2">
+                  <div class="animate-spin h-6 w-6 border-2 border-muted-foreground border-t-transparent rounded-full"></div>
+                  <span>加载中...</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Band Score Reference -->
+    <details class="mt-8 bg-card border border-border rounded-xl overflow-hidden">
+      <summary class="px-4 py-3 cursor-pointer hover:bg-accent/50 transition-colors text-sm font-semibold flex items-center gap-2">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        雅思阅读分数换算表（40题）
+      </summary>
+      <div class="px-4 pb-4">
+        <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-8 gap-2 mt-2">
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">39-40</div><div class="font-bold text-emerald-400">9.0</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">37-38</div><div class="font-bold text-emerald-400">8.5</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">35-36</div><div class="font-bold text-emerald-400">8.0</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">33-34</div><div class="font-bold text-blue-400">7.5</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">30-32</div><div class="font-bold text-blue-400">7.0</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">27-29</div><div class="font-bold text-amber-400">6.5</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">23-26</div><div class="font-bold text-amber-400">6.0</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">20-22</div><div class="font-bold text-orange-400">5.5</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">16-19</div><div class="font-bold text-orange-400">5.0</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">13-15</div><div class="font-bold text-red-400">4.5</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">10-12</div><div class="font-bold text-red-400">4.0</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">6-9</div><div class="font-bold text-red-400">3.5</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">4-5</div><div class="font-bold text-red-400">3.0</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">3</div><div class="font-bold text-red-400">2.5</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">2</div><div class="font-bold text-red-400">2.0</div></div>
+          <div class="bg-secondary rounded-md px-3 py-2 text-center"><div class="text-xs text-muted-foreground">1</div><div class="font-bold text-red-400">1.0</div></div>
+        </div>
+      </div>
+    </details>
+
+    <!-- Footer -->
+    <footer class="mt-8 text-center text-xs text-muted-foreground">
+      IELTS Reading Practice Dashboard · 数据存储于本地 SQLite
+    </footer>
+  </div>
+
+  <script>
+  // =========================================================================
+  // State
+  // =========================================================================
+  let allTests = [];
+  let recordsMap = {}; // id -> record
+  let currentFilters = { type: 'all', freq: 'all', status: 'all', search: '' };
+
+  // =========================================================================
+  // IELTS Band Score Conversion
+  // =========================================================================
+  const BAND_TABLE = [
+    [39, 40, 9.0], [37, 38, 8.5], [35, 36, 8.0], [33, 34, 7.5],
+    [30, 32, 7.0], [27, 29, 6.5], [23, 26, 6.0], [20, 22, 5.5],
+    [16, 19, 5.0], [13, 15, 4.5], [10, 12, 4.0], [6, 9, 3.5],
+    [4, 5, 3.0], [3, 3, 2.5], [2, 2, 2.0], [1, 1, 1.0], [0, 0, 0.0],
+  ];
+
+  function rawToBand(raw, total) {
+    if (!total || total <= 0) return 0;
+    const scaled = Math.round(raw * 40 / total);
+    for (const [lo, hi, band] of BAND_TABLE) {
+      if (scaled >= lo && scaled <= hi) return band;
+    }
+    return 0;
+  }
+
+  function bandDisplay(band) {
+    if (band == null) return '--';
+    return band % 1 === 0 ? band.toFixed(1) : band.toFixed(1);
+  }
+
+  function bandColor(band) {
+    if (band >= 8.0) return 'text-emerald-400';
+    if (band >= 7.0) return 'text-blue-400';
+    if (band >= 6.0) return 'text-amber-400';
+    if (band >= 5.0) return 'text-orange-400';
+    return 'text-red-400';
+  }
+
+  // =========================================================================
+  // Time Formatting
+  // =========================================================================
+  function formatTime(seconds) {
+    if (!seconds || seconds <= 0) return '--';
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  function parseTimeToSeconds(minutes, seconds) {
+    const m = parseInt(minutes) || 0;
+    const s = parseInt(seconds) || 0;
+    return m * 60 + s;
+  }
+
+  // =========================================================================
+  // Status Helpers
+  // =========================================================================
+  const STATUS_CONFIG = {
+    not_started: { label: '未开始', icon: '○', color: 'text-muted-foreground' },
+    in_progress: { label: '进行中', icon: '◐', color: 'text-amber-400' },
+    completed:   { label: '已完成', icon: '●', color: 'text-emerald-400' },
+  };
+
+  // =========================================================================
+  // API Calls
+  // =========================================================================
+  async function fetchTests() {
+    const res = await fetch('/api/tests');
+    return res.json();
+  }
+
+  async function fetchRecords() {
+    const res = await fetch('/api/records');
+    return res.json();
+  }
+
+  async function fetchStats() {
+    const res = await fetch('/api/stats');
+    return res.json();
+  }
+
+  async function upsertRecord(data) {
+    const res = await fetch('/api/records', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  }
+
+  async function resetRecord(id) {
+    const res = await fetch(`/api/records/reset/${encodeURIComponent(id)}`, {
+      method: 'POST',
+    });
+    return res.json();
+  }
+
+  // =========================================================================
+  // Toast Notification
+  // =========================================================================
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    const colors = {
+      success: 'bg-emerald-900/90 border-emerald-700 text-emerald-100',
+      error: 'bg-red-900/90 border-red-700 text-red-100',
+      info: 'bg-blue-900/90 border-blue-700 text-blue-100',
+    };
+    toast.className = `toast px-4 py-2.5 rounded-lg border text-sm font-medium shadow-lg backdrop-blur-sm ${colors[type] || colors.info}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  }
+
+  // =========================================================================
+  // Modal
+  // =========================================================================
+  function openModal(testId) {
+    const test = allTests.find(t => t.id === testId);
+    const record = recordsMap[testId];
+    if (!test) return;
+
+    document.getElementById('modal-record-id').value = testId;
+    document.getElementById('modal-title').textContent = `编辑: ${test.title}`;
+    document.getElementById('modal-status').value = record?.status || 'not_started';
+
+    const timeSec = record?.time_seconds || 0;
+    document.getElementById('modal-minutes').value = timeSec > 0 ? Math.floor(timeSec / 60) : '';
+    document.getElementById('modal-seconds').value = timeSec > 0 ? timeSec % 60 : '';
+
+    document.getElementById('modal-raw').value = record?.raw_score ?? '';
+    document.getElementById('modal-total').value = record?.total_questions ?? '';
+    updateModalBand();
+
+    document.getElementById('edit-modal').classList.remove('hidden');
+  }
+
+  function closeModal() {
+    document.getElementById('edit-modal').classList.add('hidden');
+  }
+
+  function updateModalBand() {
+    const raw = parseInt(document.getElementById('modal-raw').value);
+    const total = parseInt(document.getElementById('modal-total').value);
+    const bandEl = document.getElementById('modal-band');
+    if (!isNaN(raw) && !isNaN(total) && total > 0) {
+      const band = rawToBand(raw, total);
+      bandEl.textContent = `→ ${bandDisplay(band)}`;
+      bandEl.className = `text-sm font-mono ml-2 ${bandColor(band)}`;
+    } else {
+      bandEl.textContent = '→ --';
+      bandEl.className = 'text-sm font-mono text-muted-foreground ml-2';
+    }
+  }
+
+  document.getElementById('modal-raw').addEventListener('input', updateModalBand);
+  document.getElementById('modal-total').addEventListener('input', updateModalBand);
+
+  async function saveModal() {
+    const id = document.getElementById('modal-record-id').value;
+    const test = allTests.find(t => t.id === id);
+    if (!test) return;
+
+    const status = document.getElementById('modal-status').value;
+    const minutes = document.getElementById('modal-minutes').value;
+    const seconds = document.getElementById('modal-seconds').value;
+    const timeSeconds = parseTimeToSeconds(minutes, seconds);
+    const rawScore = document.getElementById('modal-raw').value;
+    const totalQuestions = document.getElementById('modal-total').value;
+
+    const data = {
+      id: test.id,
+      test_path: test.path,
+      passage_type: test.passage_type,
+      frequency: test.frequency,
+      title: test.full_title,
+      status,
+      time_seconds: timeSeconds,
+    };
+
+    if (rawScore !== '' && totalQuestions !== '') {
+      data.raw_score = parseInt(rawScore);
+      data.total_questions = parseInt(totalQuestions);
+    }
+
+    try {
+      const record = await upsertRecord(data);
+      recordsMap[id] = record;
+      closeModal();
+      renderTable();
+      updateStats();
+      showToast('保存成功');
+    } catch (e) {
+      showToast('保存失败: ' + e.message, 'error');
+    }
+  }
+
+  // =========================================================================
+  // Rendering
+  // =========================================================================
+  function getFilteredTests() {
+    return allTests.filter(test => {
+      // Type filter
+      if (currentFilters.type !== 'all' && test.passage_type !== currentFilters.type) return false;
+      // Frequency filter
+      if (currentFilters.freq !== 'all' && test.frequency !== currentFilters.freq) return false;
+      // Status filter
+      if (currentFilters.status !== 'all') {
+        const record = recordsMap[test.id];
+        const status = record?.status || 'not_started';
+        if (status !== currentFilters.status) return false;
+      }
+      // Search
+      if (currentFilters.search) {
+        const q = currentFilters.search.toLowerCase();
+        if (!test.full_title.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderTable() {
+    const filtered = getFilteredTests();
+    document.getElementById('results-count').textContent = filtered.length;
+
+    if (filtered.length === 0) {
+      document.getElementById('test-table-body').innerHTML = `
+        <tr><td colspan="8" class="text-center py-12 text-muted-foreground">
+          没有匹配的题目
+        </td></tr>`;
+      return;
+    }
+
+    const rows = filtered.map((test, idx) => {
+      const record = recordsMap[test.id];
+      const status = record?.status || 'not_started';
+      const sc = STATUS_CONFIG[status];
+      const time = formatTime(record?.time_seconds);
+
+      let scoreDisplay = '--';
+      if (record?.raw_score != null && record?.total_questions) {
+        const band = record.band_score ?? rawToBand(record.raw_score, record.total_questions);
+        scoreDisplay = `<span class="text-foreground">${record.raw_score}/${record.total_questions}</span> <span class="${bandColor(band)} font-mono text-xs">${bandDisplay(band)}</span>`;
+      }
+
+      const typeColor = test.passage_type === 'P1' ? 'bg-blue-900/60 text-blue-300 border-blue-800' :
+                         test.passage_type === 'P2' ? 'bg-purple-900/60 text-purple-300 border-purple-800' :
+                         'bg-orange-900/60 text-orange-300 border-orange-800';
+
+      const freqColor = test.frequency === '高频' ? 'bg-emerald-900/60 text-emerald-300 border-emerald-800' :
+                        test.frequency === '次高频' ? 'bg-amber-900/60 text-amber-300 border-amber-800' :
+                        'bg-secondary text-muted-foreground border-border';
+
+      return `
+        <tr class="border-b border-border hover:bg-accent/30 transition-colors group">
+          <td class="py-2.5 px-4 text-muted-foreground text-xs font-mono">${test.number || '--'}</td>
+          <td class="py-2.5 px-4">
+            <a href="/${encodeURI(test.path)}" class="text-foreground hover:text-blue-400 transition-colors font-medium hover:underline underline-offset-2" title="${test.full_title}">
+              ${escapeHtml(test.title)}
+            </a>
+          </td>
+          <td class="py-2.5 px-3 text-center">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${typeColor}">${test.passage_type}</span>
+          </td>
+          <td class="py-2.5 px-3 text-center">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${freqColor}">${test.frequency || '--'}</span>
+          </td>
+          <td class="py-2.5 px-3 text-center">
+            <span class="${sc.color} text-base" title="${sc.label}">${sc.icon}</span>
+          </td>
+          <td class="py-2.5 px-3 text-center font-mono text-xs text-muted-foreground">${time}</td>
+          <td class="py-2.5 px-3 text-center text-xs">${scoreDisplay}</td>
+          <td class="py-2.5 px-4 text-center">
+            <div class="flex items-center justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+              <button onclick="openModal('${test.id}')" class="h-7 w-7 rounded-md hover:bg-accent flex items-center justify-center" title="编辑">
+                <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+              </button>
+              ${status !== 'not_started' ? `
+              <button onclick="handleReset('${test.id}')" class="h-7 w-7 rounded-md hover:bg-red-900/50 flex items-center justify-center" title="重置">
+                <svg class="h-3.5 w-3.5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              </button>` : ''}
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('test-table-body').innerHTML = rows;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  async function handleReset(id) {
+    if (!confirm('确定要重置这道题的记录吗？')) return;
+    try {
+      await resetRecord(id);
+      delete recordsMap[id];
+      renderTable();
+      updateStats();
+      showToast('已重置');
+    } catch (e) {
+      showToast('重置失败', 'error');
+    }
+  }
+
+  async function updateStats() {
+    try {
+      const stats = await fetchStats();
+      document.getElementById('stat-total').textContent = allTests.length;
+      document.getElementById('stat-completed').textContent = stats.completed || 0;
+      document.getElementById('stat-progress').textContent = stats.in_progress || 0;
+      document.getElementById('stat-avg-band').textContent = stats.avg_band != null ? bandDisplay(stats.avg_band) : '--';
+    } catch (e) {
+      // Fallback: count from records
+      const records = Object.values(recordsMap);
+      document.getElementById('stat-total').textContent = allTests.length;
+      document.getElementById('stat-completed').textContent = records.filter(r => r.status === 'completed').length;
+      document.getElementById('stat-progress').textContent = records.filter(r => r.status === 'in_progress').length;
+      const scored = records.filter(r => r.band_score != null);
+      const avg = scored.length > 0 ? scored.reduce((s, r) => s + r.band_score, 0) / scored.length : null;
+      document.getElementById('stat-avg-band').textContent = avg != null ? bandDisplay(avg) : '--';
+    }
+  }
+
+  // =========================================================================
+  // Filter Handling
+  // =========================================================================
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const filter = btn.dataset.filter;
+      const value = btn.dataset.value;
+      currentFilters[filter] = value;
+
+      // Update active state
+      document.querySelectorAll(`.filter-btn[data-filter="${filter}"]`).forEach(b => {
+        b.classList.remove('active', 'bg-primary', 'text-primary-foreground');
+      });
+      btn.classList.add('active', 'bg-primary', 'text-primary-foreground');
+
+      renderTable();
+    });
+  });
+
+  document.getElementById('search-input').addEventListener('input', (e) => {
+    currentFilters.search = e.target.value.trim();
+    renderTable();
+  });
+
+  // =========================================================================
+  // Theme Toggle
+  // =========================================================================
+  function toggleTheme() {
+    const html = document.documentElement;
+    const isDark = html.classList.contains('dark');
+    html.classList.toggle('dark');
+    localStorage.setItem('theme', isDark ? 'light' : 'dark');
+    updateThemeUI(!isDark);
+  }
+
+  function updateThemeUI(isDark) {
+    document.getElementById('theme-icon').textContent = isDark ? '🌙' : '☀️';
+    document.getElementById('theme-text').textContent = isDark ? '暗色' : '亮色';
+  }
+
+  // =========================================================================
+  // Keyboard Shortcuts
+  // =========================================================================
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  // =========================================================================
+  // Init
+  // =========================================================================
+  async function init() {
+    // Load theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light') {
+      document.documentElement.classList.remove('dark');
+      updateThemeUI(false);
+    } else {
+      updateThemeUI(true);
+    }
+
+    // Set initial filter button active states
+    document.querySelectorAll('.filter-btn.active').forEach(btn => {
+      btn.classList.add('bg-primary', 'text-primary-foreground');
+    });
+
+    try {
+      // Load data in parallel
+      const [tests, records] = await Promise.all([fetchTests(), fetchRecords()]);
+
+      allTests = tests;
+      records.forEach(r => { recordsMap[r.id] = r; });
+
+      renderTable();
+      updateStats();
+    } catch (e) {
+      document.getElementById('test-table-body').innerHTML = `
+        <tr><td colspan="8" class="text-center py-12 text-red-400">
+          加载失败: ${escapeHtml(e.message)}<br>
+          <span class="text-sm text-muted-foreground">请确认 dashboard server 正在运行</span>
+        </td></tr>`;
+    }
+  }
+
+  init();
+  </script>
+</body>
+</html>
