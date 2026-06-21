@@ -7,8 +7,27 @@ set -euo pipefail
 # ============================================================
 
 # ----- 配置区（按需修改）-----
-PORT="${1:-7777}"                                 # 服务端口，默认 7777
+PORT="7777"                                       # 服务端口，默认 7777
+DAEMON=false                                      # 是否后台运行
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"  # 项目根目录
+
+# ----- 参数解析 -----
+for arg in "$@"; do
+    case "${arg}" in
+        -d|--daemon)
+            DAEMON=true
+            ;;
+        -h|--help)
+            echo "用法: bash start_at_server.sh [PORT] [-d|--daemon]"
+            echo "  PORT          服务端口，默认 7777"
+            echo "  -d, --daemon  后台运行（nohup）"
+            exit 0
+            ;;
+        [0-9]*)
+            PORT="${arg}"
+            ;;
+    esac
+done
 VENV_DIR="${PROJECT_DIR}/.venv"                   # 虚拟环境路径
 REQUIREMENTS="${PROJECT_DIR}/requirements.txt"    # 依赖文件
 SERVER_SCRIPT="${PROJECT_DIR}/dashboard/server.py" # 服务入口
@@ -66,4 +85,14 @@ echo "  按 Ctrl+C 停止服务"
 echo "=========================================="
 echo ""
 
-python "${SERVER_SCRIPT}" --root "${PROJECT_DIR}" --port "${PORT}"
+if [[ "${DAEMON}" == true ]]; then
+    LOG_FILE="${PROJECT_DIR}/server.log"
+    nohup "${VENV_DIR}/bin/python" "${SERVER_SCRIPT}" --root "${PROJECT_DIR}" --port "${PORT}" > "${LOG_FILE}" 2>&1 &
+    echo ""
+    echo "[+] 服务已在后台启动"
+    echo "    PID: $!"
+    echo "    日志: ${LOG_FILE}"
+    echo "    访问: http://127.0.0.1:${PORT}/dashboard/index.html"
+else
+    python "${SERVER_SCRIPT}" --root "${PROJECT_DIR}" --port "${PORT}"
+fi
