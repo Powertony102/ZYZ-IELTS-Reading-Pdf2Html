@@ -990,11 +990,12 @@ def build_question_html(questions: List[Question]) -> str:
                 for num in range_numbers:
                     input_html = f'<input type="text" name="q{num}" class="text-input inline-input" />'
                     stem_safe = stem_safe.replace(placeholder_map[num], f"{num} {input_html}")
+            subheading_html = f'<div class="q-subheading">{html.escape(q.subheading)}</div>' if q.subheading else ""
             items.append(
                 f"""<article class="question" id="q{range_numbers[0] if range_numbers else q.number}">
   {anchors}
   <div class="q-header"><span class="q-number">{q.number}</span><div class="q-meta">SUMMARY</div></div>
-  {f'<div class=\"q-subheading\">{html.escape(q.subheading)}</div>' if q.subheading else ''}
+  {subheading_html}
   <div class="q-stem">{stem_safe}</div>
   {options_html}
 </article>"""
